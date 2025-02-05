@@ -6,8 +6,9 @@ This repo contains the background of the problem, results of the research on exi
  - [Background on SMM](#back)
  - [Overview of coreboot SMM implementation](#cb)
  - [Overview of EDK2 SMM implementation](#edk2)
- - [Roadmap](#road)
- - [Proposed design architecture](#prop)
+ - [WIP: Roadmap](#road)
+ - [WIP: Proposed design architecture](#prop)
+ - [WIP: Proof of Concept](#poc)
  - [References](#refs)
 
 ## Background on SMM {#back}
@@ -23,6 +24,8 @@ and operates independently from the processor's interrupt and exception handling
 ## Roadmap {#road}
 
 ## Proposed design architecture {#prop}
+
+## Proof of Concept {#poc}
 
 ## References {#refs}
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
