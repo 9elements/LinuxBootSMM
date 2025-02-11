@@ -25,15 +25,15 @@ the State Save Area is stored from SMBASE + FE00H to SMBASE + FFFFH. The process
 stored in State Save Area, please refer to Intel's developer manual for IA-32/64 architecture, (Volume 3C, Chapter 33.4) [[1]](#1). When running on multiprocessor systems, each processor needs its own SMRAM space, and while there can be an overlap of the memory space,
 each processor needs its own State Save Area. There are no restrictions on how many processors can excute in SMM at given time.
 
-## Overview of EDK2 SMM implementation
+## [WIP] Overview of EDK2 SMM implementation
 
-## Overview of coreboot SMM implementation
+## [WIP] Overview of coreboot SMM implementation
 
-## Roadmap
+## [WIP] Roadmap
 
-## Proposed design architecture
+## [WIP] Proposed design architecture
 
-## Proof of Concept
+## [WIP] Proof of Concept
 
 ## References
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
