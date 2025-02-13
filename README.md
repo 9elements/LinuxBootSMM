@@ -59,12 +59,13 @@ The ```src/cpu/x86/smm``` consists of:
 
 ### SMMSTORE
 SMMSTORE, or SMMSTOREv2, are SMM mediated drivers to read from write to and erase a predefined region in the flash. This can be used by the OS or the payload to implement persistent storage to hold for instance configuration data, without needing to implement a (platform specific) storage driver in the payload itself.
-For more details about actual implementation of SMMSTORE and SMMSTOREv2, we refer to coreboot's documentation [[7]](#), [[8]](#). In practice SMMSTORE(/v2) is used if coreboot is built with EDK2 as payload. If that's the case, SMMSTORE(/v2) is used to store UEFI Secureboot Keys
-
+For more details about actual implementation of SMMSTORE and SMMSTOREv2, we refer to coreboot's documentation [[7]](#), [[8]](#). In practice SMMSTORE(/v2) is used if coreboot is built with EDK2 as payload. Such configuration uses UEFI Secureboot, which relies on Authenticated SMM variable to store Secureboot Keys [[9]](#9).
+TODO: finish up this section.
 
 ## [WIP] Overview of EDK2 SMM initialization
 
-## [WIP] Roadmap
+## Roadmap
+Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
 
 ## [WIP] Proposed design architecture
 
@@ -79,4 +80,4 @@ For more details about actual implementation of SMMSTORE and SMMSTOREv2, we refe
 <a id="6">[6]</a> [coreboot FAQ - What does coreboot leave in memory after it's done initializing the hardware](https://doc.coreboot.org/getting_started/faq.html#what-does-coreboot-leave-in-memory-after-it-s-done-initializing-the-hardware) \
 <a id="7">[7]</a> [SMM based flash storage driver](https://doc.coreboot.org/drivers/smmstore.html) \
 <a id="8">[8]</a> [SMM based flash storage driver version 2](https://doc.coreboot.org/drivers/smmstorev2.html) \
-
+<a id="9">[9]</a> [A Tour Beyond BIOS Implementing UEFI Authenticated Variables in SMM with EDKII](https://raw.githubusercontent.com/tianocore-docs/Docs/master/White_Papers/A_Tour_Beyond_BIOS_Implementing_UEFI_Authenticated_Variables_in_SMM_with_EDKII_V2.pdf) \
