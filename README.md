@@ -139,7 +139,7 @@ Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35)
 ## [WIP] Proposed design architecture
 
 ## [WIP] Proof of Concept
-For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](linuxbootsmm-builder/README.md).
+For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
 
 ## References
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
