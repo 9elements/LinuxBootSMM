@@ -39,7 +39,7 @@ each processor needs its own State Save Area. This can be done There are no rest
 As mentioned above, the base address for SMRAM is 30000H (default SMBASE). Software can relocate the SMRAM by setting SMBASE field in the saved state map (7EF8H) to the new value. The SMBASE register is reloaded by the RSM instruction on each SMM exit, which results in the following SMI requests to use the new SMBASE value. On multiprocessor systems, SMBASE Relocation is used to adjust 
 ensure the SMBASE for each CPU is different so that State Save Areas do not overlap.
 
-## [WIP] Overview of coreboot SMM initialization
+## Overview of coreboot SMM initialization
 coreboot, if built for x86, takes care of initializing SMM. When HAVE_SMI_HANDLER is set to "y" (which is the case for most of the supported x86 boards), source files responsible for SMM init ```src/cpu/x86/smm``` are compiled as part of ramstage class [[2]](#2), [[3]](#3).
 The ramstage is one of the multiple coreboot stages that are each compiled as separate binaries and compressed into CBFS. ramstage is responsible for main device init, so i.a. SMM init [[4]](#4).
 The ```src/cpu/x86/smm``` consists of:
@@ -103,7 +103,29 @@ The ```src/cpu/x86/smm``` consists of:
 ### SMBASE Relocation
 When coreboot is built for multiprocessor system, with PARALLEL_MP set to "y", the `src/cpu/x86/mp_init.c` is compiled into ramstage. The MP initialization defines two classes of processors, the bootstrap (BSP) and application (AP) processors. After each power-up or RESET of an MP system, one of the processors is being selected as BSP
 and the remaining ones are designated as APs. After selection, the BSP executes BIOS bootstrap code. We omit the detailed description of usual MP initialization protocol, and focus on describing how coreboot approaches SMBASE relocation once APs receive SIPI. For more details on MP init we refer to coreboot's and Intel's documentations [[10]](#10), [[11]](#11).
-
+The function related to SMM are:
+ - `smm_initiate_relocation_parallel()`: used to send SMI to self without any serialization. 
+ - `smm_initiate_relocation()`: used to send SMI to self with single execution.
+ - `is_smm_enabled()`: returns true if [HAVE_SMI_HANDLER ∧ mp_state.do_smm] is true.
+ - `smm_disable()`: setter for mp_state.do_smm
+ - `smm_enable()`: setter for mp_state.do_smm, under condition that HAVE_SMI_HANDLER flag is set to "y".
+ - `smm_do_relocation(void *arg)`: used to compute the location of the new SMBASE.
+ - `install_relocation_handler(int num_cpus, size_t save_state_size)`: when X86_SMM_SKIP_RELOCATION_HANDLER flag in the build configuration is not enabled, it will call `smm_setup_relocation_handler()` (see above) with provided number of CPUs and save state size, new SMBASE location (computed with `smm_do_relocation()`) and value stored in CR3 register.
+ - `install_permantent_handler(int num_cpus, uintptr_t smbase, size_t smsize, size_t save_state_size)`: upon execution, all CPUs will relocate to the permanent handler. This function sets parameters needed for all CPUs, and simply provides beginning of SMRAM region, number of CPUs using the handler, save state and stack sizes for each CPU.
+ - `load_smm_handlers()`: used to load SMM handlers as a part of MP init. If SMM is enabled, it first sets up the stacks (see `smm_setup_stack()` description above) and installs SMM relocation and permanent handlers. Finally it indicates in mp_state structure that SMM handlers have been loaded.
+ - `trigger_smm_relocation()`: used to trigger SMM as a part of MP init. Checks whether SMM is enabled and only triggers SMM mode for the current CPU if this is the case.
+ - `fill_mp_state_smm(struct mp_state *state, const struct mp_ops *ops)`:
+ - `do_mp_init_with_smm(struct bus *cpu_bus, const struct mp_ops *mp_ops)`: the mp_ops argument is used to drive the multiprocess initialization. The sequence of operations is the following:
+    1. pre_mp_init()
+    2. get_cpu_count()
+    3. get_smm_info()
+    4. get_microcode_info()
+    5. adjust_cpu_apic_entry() for each number of get_cpu_count()
+    6. pre_mp_smm_init()
+    7. per_cpu_smm_trigger() in parallel for all cpus which calls relocation_handler() in SMM.
+    8. mp_initialize_cpu() for each cpu
+    9. post_mp_init()
+ - `mp_init_with_smm(struct bus *cpu_bus, const struct mp_ops *mp_ops)`: calls `do_mp_init_with_smm()` and returns error in case of the call resulting in an error. 
 
 ### SMMSTORE
 SMMSTORE, or SMMSTOREv2, are SMM mediated drivers to read from write to and erase a predefined region in the flash. This can be used by the OS or the payload to implement persistent storage to hold for instance configuration data, without needing to implement a (platform specific) storage driver in the payload itself.
