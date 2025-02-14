@@ -40,7 +40,7 @@ As mentioned above, the base address for SMRAM is 30000H (default SMBASE). Softw
 ensure the SMBASE for each CPU is different so that State Save Areas do not overlap.
 
 ## [WIP] Overview of coreboot SMM initialization
-coreboot, if build for x86, takes care of initializing SMM. When HAVE_SMI_HANDLER is set to "y" (which is the case for most of the supported x86 boards), source files responsible for SMM init ```src/cpu/x86/smm``` are compiled as part of ramstage class [[2]](#2), [[3]](#3).
+coreboot, if built for x86, takes care of initializing SMM. When HAVE_SMI_HANDLER is set to "y" (which is the case for most of the supported x86 boards), source files responsible for SMM init ```src/cpu/x86/smm``` are compiled as part of ramstage class [[2]](#2), [[3]](#3).
 The ramstage is one of the multiple coreboot stages that are each compiled as separate binaries and compressed into CBFS. ramstage is responsible for main device init, so i.a. SMM init [[4]](#4).
 The ```src/cpu/x86/smm``` consists of:
  - **save_state.c** - defines 4 functions:
@@ -101,6 +101,8 @@ The ```src/cpu/x86/smm``` consists of:
     - ```smm_pci_get_stored_resources(const volatile struct smm_pci_resource_info **out_slots, size_t *out_size)```: getter function for stored info
 
 ### SMBASE Relocation
+When coreboot is built for multiprocessor system, with PARALLEL_MP set to "y", the `src/cpu/x86/mp_init.c` is compiled into ramstage. The MP initialization defines two classes of processors, the bootstrap (BSP) and application (AP) processors. After each power-up or RESET of an MP system, one of the processors is being selected as BSP
+and the remaining ones are designated as APs. After selection, the BSP executes BIOS bootstrap code. We omit the detailed description of usual MP initialization protocol, and focus on describing how coreboot approaches SMBASE relocation once APs receive SIPI. For more details on MP init we refer to coreboot's and Intel's documentations [[10]](#10), [[11]](#11).
 
 
 ### SMMSTORE
@@ -115,6 +117,7 @@ Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35)
 ## [WIP] Proposed design architecture
 
 ## [WIP] Proof of Concept
+For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](linuxbootsmm-builder/README.md).
 
 ## References
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
@@ -126,3 +129,6 @@ Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35)
 <a id="7">[7]</a> [SMM based flash storage driver](https://doc.coreboot.org/drivers/smmstore.html) \
 <a id="8">[8]</a> [SMM based flash storage driver version 2](https://doc.coreboot.org/drivers/smmstorev2.html) \
 <a id="9">[9]</a> [A Tour Beyond BIOS Implementing UEFI Authenticated Variables in SMM with EDKII](https://raw.githubusercontent.com/tianocore-docs/Docs/master/White_Papers/A_Tour_Beyond_BIOS_Implementing_UEFI_Authenticated_Variables_in_SMM_with_EDKII_V2.pdf) \
+<a id="10">[10]</a> [coreboot - Multiple Processor (MP) Initialization](https://doc.coreboot.org/soc/intel/mp_init/mp_init.html) \
+<a id="11">[11]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3A, Ch. 8.4](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
+
