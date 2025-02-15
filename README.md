@@ -6,7 +6,7 @@ This repo contains the background of the problem, results of the research on exi
  - [Background on SMM](#background-on-smm)
  - [Overview of coreboot SMM initialization](#overview-of-coreboot-smm-initialization)
  - [Overview of EDK2 SMM initialization](#overview-of-edk2-smm-initialization)
- - [WIP: Roadmap](#roadmap)
+ - [Roadmap](#roadmap)
  - [WIP: Proposed design architecture](#proposed-design-architecture)
  - [WIP: Proof of Concept](#proof-of-concept)
  - [References](#references)
