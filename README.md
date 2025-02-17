@@ -151,8 +151,61 @@ SMM initialization in EDK2 makes use of interfaces defined by UEFI PI specs:
 
 These modules are used to initialize SMM for SMM drivers in the DXE phase. The SMM foundation will load all of the SMM drivers, and these drivers will register SMI handlers to service synchronous or asynchronous SMI activations.\
 The source files with drivers used in EDK2 are under ```MdeModulePkg/Core/PiSmmCore```, and consist of:
- - **PiSmmIpl**: A DXE driver that loads SMM foundation driver.
- - **PiSmmCore**: The SMM foundation driver, responsible for loading various SMM drivers, hence managing their dependencies, and providing services to them. Upon received SMI, it is responsible for determning which SMM handler to call.
+ - **PiSmmIpl**: A DXE driver that loads SMM foundation driver. Consists of following functions:
+ - **PiSmmCore**: The SMM foundation driver, responsible for loading various SMM drivers, hence managing their dependencies, and providing services to them. Upon received SMI, it is responsible for determining which SMM handler to call. Consists of the following functions:
+    - `SmmEfiNotAvailableYetArg5()`: placeholder function until all SMM system table services are available, should never be executed in the normal circumstances.
+    - `SmmLegacyBootHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when a Legacy Boot event is signalled. The SMM
+  Core uses this signal to know that a Legacy Boot has been performed and that
+  `gSmmCorePrivate` (a physical pointer to the private structure shared between IPL and Core) that is shared between the UEFI and SMM execution environments can not be accessed from SMM anymore since that structure is considered free memory by a legacy OS. 
+  Then the SMM Core also install SMM Legacy Boot protocol to notify SMM driver that system enter legacy boot.
+    - `SmmExitBootServicesHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when an Exit Boot Services event is signalled, installs SMM Exit Boot Services protocol to notify the SMM driver of exiting boot services.
+    - `SmmS3EntryCallBack (IN           EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID        *Context         OPTIONAL,
+  IN OUT       VOID        *CommBuffer      OPTIONAL,
+  IN OUT       UINTN       *CommBufferSize  OPTIONAL
+  )`: main entry point for an SMM handler dispatch or communicate-based callback when on S3 resume path.
+    - `SmmReadyToBootHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when an Ready To Boot event is signalled, installs SMM Ready To Boot protocol to notify SMM driver that system is ready to boot. 
+    - `SmmReadyToLockHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called in two cases: when *DxeSmmReadyToLock* protocol is added, or if *gEfiEventReadyToBootGuid* event is signalled. Responsible for deregistering not required SMIs after SMRAM is locked, and for installing SMM Ready to Lock protocol to inform SMM drivers about SMRAM being locked.
+    - `SmmEndOfDxeHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when EndOfDxe is signalled. Installs SMM EndOfDxe Protocol to inform SMM drivers that DXE stage ended.
+    - `SmmS3SmmInitDoneHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when S3SmmInitDone is signalled (i.e. SMM initialization is finished on S3 resume path). Installs SMM S3SmmInitDone Protocol to notify SMM drivers that SMM S3 initialization is done. 
+    - `SmmEndOfS3ResumeHandler (IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )`: SMI handler that is called when the EndOfS3Resume is signalled. Installs the SMM EndOfS3Resume Protocol to notify SMM Drivers that S3 resume has finished.
+    - `InternalIsBufferOverlapped (IN UINT8  *Buff1,
+  IN UINTN  Size1,
+  IN UINT8  *Buff2,
+  IN UINTN  Size2
+  )`: helper func for determining whether two buffers overlap in memory.
+    - `SmmEntryPoint (IN CONST EFI_SMM_ENTRY_CONTEXT  *SmmEntryContext)`: main entry point to SMM Foundation, only used by SMRAM invocation.
+    - `SmmCoreInstallLoadedImage()`: responsible for installing LoadedImage Protocol (TODO: explain what is LoadedImage protc.)
+    - `SmmMain (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE  *SystemTable)`: main entry point for SMM Core, responsible for installing DXE protocols, reloading SMM Core into SMRAM, and registering SMM Core EntryPoint on the SMI vector.
+
 The SMM driver responsible for SMM initialization finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm`
 
 ## Roadmap
