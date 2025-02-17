@@ -41,7 +41,12 @@ ensure the SMBASE for each CPU is different so that State Save Areas do not over
 
 ## Overview of coreboot SMM initialization
 coreboot, if built for x86, takes care of initializing SMM. When HAVE_SMI_HANDLER is set to "y" (which is the case for most of the supported x86 boards), source files responsible for SMM init ```src/cpu/x86/smm``` are compiled as part of ramstage class [[2]](#2), [[3]](#3).
-The ramstage is one of the multiple coreboot stages that are each compiled as separate binaries and compressed into CBFS. ramstage is responsible for main device init, so i.a. SMM init [[4]](#4).
+The ramstage is one of the multiple coreboot stages that are each compiled as separate binaries and compressed into CBFS. ramstage is responsible for main device init, so i.a. SMM init [[4]](#4). The coreboot stages are shown at Fig. 1.
+<figure>
+  <img src="figures/coreboot_stages.png" alt="description">
+  <figcaption>Figure 1: coreboot - Platform Initialization Stages<a href=#4>[4]</a>CC-by 4.0 the coreboot project</figcaption>
+</figure>
+
 The ```src/cpu/x86/smm``` consists of:
  - **save_state.c** - defines 4 functions:
     - ```init_save_state()```: determines which operational structure to use for the save state based on the system's revision number, by iterating through the list of available predefined operation structures and checking their supported revision numbers.
@@ -60,7 +65,7 @@ The ```src/cpu/x86/smm``` consists of:
     - ```smm_region_overlaps_handler(const struct region *r)```: for checking whether region pointed to by `r` overlaps with the memory reserved for SMM.
     - ```smm_handler_start(void *arg)```: used to execute the handler. The flow of the function is as follows: it checks whether the lock can be obtained and waits if not, back's up the PCI address, and executes the SoC specific SMI handlers in order to allow the SMM Relocation handlers in SoC specific modules to be executed.
     This is required on multiprocessor systems to adjust SMBASE value for each (logical) processor so that the SMRAM state save areas for each processor do not overlap.
- - **smm_module_loader.c** - "main" component responsible for loading the complete SMM module, that is, the SMM initialization is done using the functions provided by this source file. These are:
+ - **smm_module_loader.c** - component responsible for loading the complete SMM module into the memory, that is, the SMM initialization is done using the functions provided by this source file. These are:
     - ```smm_create_map(const uintptr_t smbase, const unsigned int num_cpus, const struct smm_loader_params *params)```: creates map of all the CPU entry points, save state locations and beginning and end of code segments for each CPU. This map is used during relocation to properly align as many CPUs that can fit into the SMRAM region.
     It checks when a code segent is full and begins placing the reminder CPUs in the lower segments. Used to assure that save state area of different CPUs do not overlap.
     - ```smm_get_cpu_smbase(unsigned int cpu_num)```: getter for SMBASE address of given CPU
@@ -132,6 +137,23 @@ SMMSTORE, or SMMSTOREv2, are SMM mediated drivers to read from write to and eras
 For more details about actual implementation of SMMSTORE and SMMSTOREv2, we refer to coreboot's documentation [[7]](#), [[8]](#).
 
 ## [WIP] Overview of EDK2 SMM initialization
+EDK2 implements the SMM initialization as specified in UEFI PI Specification [[12]](#12), that is, it implements SMM Initial Program Loader (IPL) which loads SMM into SMRAM and then starts SMM services. This takes place in the Driver Execution Phase Environment (DXE) stage of EDK2. Stages of EDK2 are shown in Fig. 2.
+<figure>
+  <img src="figures/edk2_stages.png" alt="description">
+  <figcaption>Figure 2: EDK2 stages - Platform Initialization Stages<a href=#4>[4]</a>, CC-by 4.0 the coreboot project</figcaption>
+</figure>
+
+SMM initialization in EDK2 makes use of interfaces defined by UEFI PI specs:
+ - **EFI_MM_ACCESS_PROTOCOL** (previously **EFI_SMM_ACCESS2_PROTOCOL** deprecated with UEFI PI 1.5 spec): used to describe the different SMRAM regions available in the system.
+ - **EFI_MM_CONTROL_PROTOCOL** (previously **EFI_SMM_CONTROL2_PROTOCOL** deprecated with UEFI PI 1.5 spec): used to initiate synchronous SMIs.
+ - **EFI_MM_CONFIGURATION_PROTOCOL** (previously **EFI_SMM_CONFIGURATION_PROTOCOL** deprecated with UEFI PI 1.5 spec): indicates which areas within SMRAM are reserved.
+ - **EFI_MM_BASE_PROTOCOL** (previously **EFI_SMM_BASE2_PROTOCOL** deprecated with UEFI PI 1.5 spec): used to locate System Management System Table (SMST) during SMM driver initialization. SMTS is a set of services and data that are designed to provide a basic services for SMM drivers.
+
+These modules are used to initialize SMM for SMM drivers in the DXE phase. The SMM foundation will load all of the SMM drivers, and these drivers will register SMI handlers to service synchronous or asynchronous SMI activations.\
+The source files with drivers used in EDK2 are under ```MdeModulePkg/Core/PiSmmCore```, and consist of:
+ - **PiSmmIpl**: A DXE driver that loads SMM foundation driver.
+ - **PiSmmCore**: The SMM foundation driver, responsible for loading various SMM drivers, hence managing their dependencies, and providing services to them. Upon received SMI, it is responsible for determning which SMM handler to call.
+The SMM driver responsible for SMM initialization finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm`
 
 ## Roadmap
 Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
@@ -152,5 +174,6 @@ For the instructions on the usage, please refer to LinuxBootSMM-builder's [READM
 <a id="8">[8]</a> [SMM based flash storage driver version 2](https://doc.coreboot.org/drivers/smmstorev2.html) \
 <a id="9">[9]</a> [A Tour Beyond BIOS Implementing UEFI Authenticated Variables in SMM with EDKII](https://raw.githubusercontent.com/tianocore-docs/Docs/master/White_Papers/A_Tour_Beyond_BIOS_Implementing_UEFI_Authenticated_Variables_in_SMM_with_EDKII_V2.pdf) \
 <a id="10">[10]</a> [coreboot - Multiple Processor (MP) Initialization](https://doc.coreboot.org/soc/intel/mp_init/mp_init.html) \
-<a id="11">[11]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3A, Ch. 8.4](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
-
+<a id="11">[11]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3A, Ch. 8.4](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
+<a id="12">[12]</a> [UEFI PI Specification 1.9, Volume 4](https://uefi.org/sites/default/files/resources/UEFI_PI_Spec_Final_Draft_1.9.pdf) \
+<a id="13">[13]</a> [A Tour Beyond BIOS Launching Standalone SMM Drivers in PEI using the EFI Developer Kit II](https://github.com/vincentjzimmer/Documents/blob/master/A_Tour_Beyond_BIOS_Launching_Standalone_SMM_Drivers_in_PEI_using_the_EFI_Developer_Kit_II.pdf)
