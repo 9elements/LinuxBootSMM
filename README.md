@@ -136,7 +136,7 @@ The function related to SMM are:
 SMMSTORE, or SMMSTOREv2, are SMM mediated drivers to read from write to and erase a predefined region in the flash. This can be used by the OS or the payload to implement persistent storage to hold for instance configuration data, without needing to implement a (platform specific) storage driver in the payload itself.
 For more details about actual implementation of SMMSTORE and SMMSTOREv2, we refer to coreboot's documentation [[7]](#), [[8]](#).
 
-## [WIP] Overview of EDK2 SMM initialization
+## Overview of EDK2 SMM initialization
 EDK2 implements the SMM initialization as specified in UEFI PI Specification [[12]](#12), that is, it implements SMM Initial Program Loader (IPL) which loads SMM into SMRAM and then starts SMM services. This takes place in the Driver Execution Phase Environment (DXE) stage of EDK2. Stages of EDK2 are shown in Fig. 2.
 <figure>
   <img src="figures/edk2_stages.png" alt="description">
