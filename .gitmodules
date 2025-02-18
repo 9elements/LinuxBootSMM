@@ -3,7 +3,7 @@
 	url = https://github.com/micgor32/linuxbootsmm-builder
 [submodule "linux"]
 	path = linux
-	url = git@github.com:micgor32/linux.git
+	url = https://github.com/micgor32/linux.git
 [submodule "coreboot-lbsmm"]
 	path = coreboot-lbsmm
 	url = https://github.com/micgor32/coreboot-lbsmm.git
