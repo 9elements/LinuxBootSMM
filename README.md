@@ -273,7 +273,13 @@ stateDiagram-v2
         }
 
         state smm_reloc_init.c {
-            state "placeholder for now, SMBASE reloc essentially" as rl
+            relocate() --> get_cpus()
+            note left of get_cpus() : assumes this information is provided by coreboot in the CTABLE.
+            relocate() --> get_smm_info()
+            note left of get_smm_info() : utilizes platform_get_smm_info() from the coreboot SMM interface.
+            relocate() --> trigger_per_cpu()
+            trigger_per_cpu() --> install_reloc_handler()
+            trigger_per_cpu() --> install_permantent_handler()
         }
     }
 ```
