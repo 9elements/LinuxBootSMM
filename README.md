@@ -232,7 +232,7 @@ stateDiagram-v2
     
 
     state Payload(LinuxBoot) {
-        state "payload stage" as payload
+        state "Linux SMM driver" as payload
         payload --> smm_loader.c
         payload --> smm_reloc_init.c
 
@@ -309,6 +309,11 @@ stateDiagram-v2
 ```
 <figcaption>Figure 4: S3 Resume boot path SMM initialization flow</figcaption>
 
+Reusing the coreboot SMM payload interface which was invented with EDK2 support in mind allows to have unified solutions for both EDK2 and LinuxBoot payloads which leads to limited fragmentation of the code, i.e. we do not reinvent the wheel and act in the spirit of DRY principle.
+Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
+The driver itself follows similar principle to coreboot when it comes to modularity, namely, we aim to "load" the inital SMM setup at once. As shown in Fig. 3, as soon as ramstage finishes and coreboot moves control to the payload, the driver reads the necessary data from 
+the coreboot table, creates SMRAM map, initializes TSEG, save state region for the BSP and installs the initial SMI handler. Then the driver performs SMBASE relocation for each CPU if we are on a MP system. By following this approach we assure the driver is being keept minimalistic,
+and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers.
 
 
 ## [WIP] Proof of Concept
