@@ -61,7 +61,7 @@ The ```src/cpu/x86/smm``` consists of:
     - ```smi_backup_pci_address```: backing up PCI address under u32 int variable pci_orig in case OS needs it later.
     - ```smi_restore_pci_address()```: restore previously backed up PCI address.
     - ```*smm_get_save_state(int cpu)```: getter for save state of given processor.
-    - ```smm_revision()```: retuns the SMM save state Revision from the SMM save state, which is alwazs at the same pre-defined offset downward from the top of the save state, that is: ```save_state + save_state_size - SMM_REVISION_OFFSET_FROM_TOP```.
+    - ```smm_revision()```: retuns the SMM save state Revision from the SMM save state, which is always at the same pre-defined offset downward from the top of the save state, that is: ```save_state + save_state_size - SMM_REVISION_OFFSET_FROM_TOP```.
     - ```smm_region_overlaps_handler(const struct region *r)```: for checking whether region pointed to by `r` overlaps with the memory reserved for SMM.
     - ```smm_handler_start(void *arg)```: used to execute the handler. The flow of the function is as follows: it checks whether the lock can be obtained and waits if not, back's up the PCI address, and executes the SoC specific SMI handlers in order to allow the SMM Relocation handlers in SoC specific modules to be executed.
     This is required on multiprocessor systems to adjust SMBASE value for each (logical) processor so that the SMRAM state save areas for each processor do not overlap.
@@ -203,6 +203,106 @@ The SMM driver that performs SMM initialization and provides CPU specific servic
 Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
 
 ## [WIP] Proposed design architecture
+The existing solution for moving the SMM ownership to EDK2 payload [[14]](#14) distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
+Issues introduced by these two boot paths mentioned in the documentation are:
+ - **S0 boot**: Payloads shall **not** be silicon dependent, hence firmware (coreboot), must provide the payload with silicon specific register definitions. This issue was solved by providing these, as well as SPI layout, using the coreboot table (cbtable). The exact definitions are available given in the source file and omitted here [[14]](#14). 
+ - **S3 boot**: On the S3 boot path, the payload execution is skipped, hence the minimal relocation has to be done by coreboot. The initial 4k of SMRAM containing software SMI number and SMBASE addresses for CPUs is preserved. coreboot then, performs SMM relocation and triggers payloads' software SMI.
+ 
+For the purpose of moving the SMM ownership to LinuxBoot payload, we follow-up on the same idea, that is, the slightly modified SMM payload "interface" on the coreboot side will be used. Given the interface being initially designed to work with ED2 payload, some adjustments will be required. The high-level overview of the flow for S0 and S3 are shown in Fig. 3 and Fig. 4 respectively.
+
+```mermaid
+stateDiagram-v2
+    state "bootblock -> verstage (optionally) -> romstage -> postcar" as prev
+    [*] --> coreboot
+    state coreboot {
+        prev --> mp_init.c
+        prev --> coreboot_table.c
+
+        state mp_init.c {
+            mp_init_with_smm() --> do_mp_init_with_smm()
+            note right of do_mp_init_with_smm() : Skips SMM initialization.
+        }
+        state coreboot_table.c {
+            lb_save_restore()
+            note left of lb_save_restore() : Required data (registers, SPI, etc.) is stored in CBTABLE.
+        }
+    }
+        coreboot --> Payload(LinuxBoot)
+    
+
+    state Payload(LinuxBoot) {
+        state "payload stage" as payload
+        payload --> smm_loader.c
+        payload --> smm_reloc_init.c
+
+        state smm_loader.c {
+            load_module() --> create_map()
+            create_map() --> get_cb_data(): reads the data from CBTABLE
+            load_module() --> setup_initial_smm_handler()
+            load_module() --> setup_stack()
+            load_module() --> setup_reloc_handler()
+            load_module() --> save_state.c
+            load_module() --> tseg_setup.c
+            stub_setup() --> stub.S
+            note left of stub.S : similarly to coreboot, this should be wrapper for bootstrapping smm_handler.c given the parameters from setup_smihandler_params().
+            setup_initial_smm_handler() --> stub_setup()
+            stub.S --> smm_handler.c
+            setup_reloc_handler() --> stub_setup()
+
+            state smm_handler.c {
+                start_handler() --> smi_lock()
+                start_handler() --> smi_release_lock()
+                start_handler() --> get_pci_address()
+                start_handler() --> soc_handler()
+                note left of soc_handler() : assumes that sufficient information needed is provided by coreboot in the CBTABLE.
+            }
+
+            state save_state.c {
+                init_save_state_region()
+            }
+
+            state tseg_setup.c {
+                allign_tseg_subregion()
+                list_subregions()
+            }
+
+            state stub.S {
+                state "Assembly based wrapper" as s
+            }
+        }
+
+        state smm_reloc_init.c {
+            state "placeholder for now, SMBASE reloc essentially" as rl
+        }
+    }
+```
+<figcaption>Figure 3: S0 boot path SMM initialization flow</figcaption>
+
+```mermaid
+stateDiagram-v2
+    [*] --> coreboot
+    coreboot --> Payload(LinuxBoot)
+    state coreboot {
+        [*] --> mp_init
+        [*] --> coreboot_table
+
+        state mp_init {
+            mp_init_with_smm() --> do_mp_init_with_smm()
+            note left of do_mp_init_with_smm() : Skips SMM initialization.
+        }
+        state coreboot_table {
+            lb_save_restore()
+            note left of lb_save_restore() : Required data (registers, SPI, etc.) is stored in CBTABLE.
+        }
+    }
+
+    state Payload(LinuxBoot) {
+        smm_loader
+    }
+```
+<figcaption>Figure 4: S3 Resume boot path SMM initialization flow</figcaption>
+
+
 
 ## [WIP] Proof of Concept
 For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
@@ -220,4 +320,6 @@ For the instructions on the usage, please refer to LinuxBootSMM-builder's [READM
 <a id="10">[10]</a> [coreboot - Multiple Processor (MP) Initialization](https://doc.coreboot.org/soc/intel/mp_init/mp_init.html) \
 <a id="11">[11]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3A, Ch. 8.4](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
 <a id="12">[12]</a> [UEFI PI Specification 1.9, Volume 4](https://uefi.org/sites/default/files/resources/UEFI_PI_Spec_Final_Draft_1.9.pdf) \
-<a id="13">[13]</a> [A Tour Beyond BIOS Launching Standalone SMM Drivers in PEI using the EFI Developer Kit II](https://github.com/vincentjzimmer/Documents/blob/master/A_Tour_Beyond_BIOS_Launching_Standalone_SMM_Drivers_in_PEI_using_the_EFI_Developer_Kit_II.pdf)
+<a id="13">[13]</a> [A Tour Beyond BIOS Launching Standalone SMM Drivers in PEI using the EFI Developer Kit II](https://github.com/vincentjzimmer/Documents/blob/master/A_Tour_Beyond_BIOS_Launching_Standalone_SMM_Drivers_in_PEI_using_the_EFI_Developer_Kit_II.pdf) \
+<a id="14">[14]</a> [70378: drivers/smm_payload_interface: Add initial support for SMM payload](https://review.coreboot.org/c/coreboot/+/70378) \
+<a id="15">[15]</a> [10. Boot Paths - UEFI PI Specification](https://uefi.org/specs/PI/1.8/V1_Boot_Paths.html#boot-paths) \
