@@ -211,6 +211,7 @@ Issues introduced by these two boot paths mentioned in the documentation are:
 For the purpose of moving the SMM ownership to LinuxBoot payload, we follow-up on the same idea, that is, the slightly modified SMM payload "interface" on the coreboot side will be used. Given the interface being initially designed to work with ED2 payload, some adjustments will be required. The high-level overview of the flow for S0 and S3 are shown in Fig. 3 and Fig. 4 respectively.
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "18px", "nodeSpacing": 60, "edgeLabelSpacing": 20, "actorFontSize": 18}}}%%
 stateDiagram-v2
     state "bootblock -> verstage (optionally) -> romstage -> postcar" as prev
     [*] --> coreboot
