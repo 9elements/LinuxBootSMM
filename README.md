@@ -36,7 +36,7 @@ each processor needs its own State Save Area. This can be done There are no rest
 | Stacks                 |  [SMBASE + 8000H + 7E00H] -> (up to) [SMBASE+ 8000H + FFFF8000H] |
 
 ### SMBASE Relocation
-As mentioned above, the base address for SMRAM is 30000H (default SMBASE). Software can relocate the SMRAM by setting SMBASE field in the saved state map (7EF8H) to the new value. The SMBASE register is reloaded by the RSM instruction on each SMM exit, which results in the following SMI requests to use the new SMBASE value. On multiprocessor systems, SMBASE Relocation is used to adjust 
+As mentioned above, the base address for SMRAM is 30000H (default SMBASE). Software can relocate the SMRAM by setting SMBASE field in the saved state map (7EF8H) to the new value. The SMBASE register is reloaded by the RSM instruction on each SMM exit, which results in the following SMI requests to use the new SMBASE value. On multiprocessor systems, SMBASE Relocation is used to 
 ensure the SMBASE for each CPU is different so that State Save Areas do not overlap.
 
 ## Overview of coreboot SMM initialization
@@ -46,6 +46,7 @@ The ramstage is one of the multiple coreboot stages that are each compiled as se
   <img src="figures/coreboot_stages.png" alt="description">
   <figcaption>Figure 1: coreboot - Platform Initialization Stages<a href=#4>[4]</a>CC-by 4.0 the coreboot project</figcaption>
 </figure>
+<br>
 
 The ```src/cpu/x86/smm``` consists of:
  - **save_state.c** - defines 4 functions:
@@ -141,6 +142,7 @@ EDK2 implements the SMM initialization as specified in UEFI PI Specification [[1
   <img src="figures/edk2_stages.png" alt="description">
   <figcaption>Figure 2: EDK2 stages - Platform Initialization Stages<a href=#4>[4]</a>, CC-by 4.0 the coreboot project</figcaption>
 </figure>
+<br>
 
 SMM initialization in EDK2 makes use of interfaces defined by UEFI PI specs:
  - **EFI_MM_ACCESS_PROTOCOL** (previously **EFI_SMM_ACCESS2_PROTOCOL** deprecated with UEFI PI 1.5 spec): used to describe the different SMRAM regions available in the system.
@@ -290,30 +292,45 @@ stateDiagram-v2
     [*] --> coreboot
     coreboot --> Payload(LinuxBoot)
     state coreboot {
-        [*] --> mp_init
-        [*] --> coreboot_table
+        [*] --> mp_init.c
+        [*] --> coreboot_table.c
+        [*] --> smm_core_support.c
 
-        state mp_init {
+        state mp_init.c {
             mp_init_with_smm() --> do_mp_init_with_smm()
-            note left of do_mp_init_with_smm() : Skips SMM initialization.
+            note left of do_mp_init_with_smm() : Performs SMBASE relocation, does NOT install handlers.
         }
-        state coreboot_table {
+        state coreboot_table.c {
             lb_save_restore()
             note left of lb_save_restore() : Required data (registers, SPI, etc.) is stored in CBTABLE.
+        }
+        state smm_core_support.c {
+            linux_s3_restore()
+            note left of linux_s3_restore() : Triggers Linux SMI handler and passes the needed info to lock down SMM. Please note that this function differs from perform_s3_restore() used by EDK2.
         }
     }
 
     state Payload(LinuxBoot) {
-        smm_loader
+        state "Linux SMM Driver" as payload
+        payload --> smm_handler.c
+        state smm_handler.c {
+            start_handler() --> smi_lock()
+            start_handler() --> smi_release_lock()
+            start_handler() --> get_pci_address()
+            start_handler() --> soc_handler()
+            note left of soc_handler() : assumes that sufficient information needed is provided by coreboot in the CBTABLE and by the smm_core_support.
+        }
     }
 ```
 <figcaption>Figure 4: S3 Resume boot path SMM initialization flow</figcaption>
+<br>
 
 Reusing the coreboot SMM payload interface which was invented with EDK2 support in mind allows to have unified solutions for both EDK2 and LinuxBoot payloads which leads to limited fragmentation of the code, i.e. we do not reinvent the wheel and act in the spirit of DRY principle.
 Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
 The driver itself follows similar principle to coreboot when it comes to modularity, namely, we aim to "load" the inital SMM setup at once. As shown in Fig. 3, as soon as ramstage finishes and coreboot moves control to the payload, the driver reads the necessary data from 
-the coreboot table, creates SMRAM map, initializes TSEG, save state region for the BSP and installs the initial SMI handler. Then the driver performs SMBASE relocation for each CPU if we are on a MP system. By following this approach we assure the driver is being keept minimalistic,
-and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers.
+the coreboot table, creates SMRAM map, initializes TSEG, save state region for the BSP and installs the initial SMI handler. Then the driver performs SMBASE relocation for each CPU if we are on a MP system. By following this approach we assure the driver is keept minimalistic,
+and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers. \
+When on S3 track the idea is again similar to the EDK2 implementation: coreboot performs SMBASE relocation, triggers Linux SMM drivers' SMI handler, which then finishes up SMM lockdown.
 
 
 ## [WIP] Proof of Concept
