@@ -239,47 +239,25 @@ stateDiagram-v2
         payload --> smm_reloc_init.c
 
         state smm_loader.c {
-            load_module() --> create_map()
-            create_map() --> get_cb_data(): reads the data from CBTABLE
-            load_module() --> setup_initial_smm_handler()
-            load_module() --> setup_stack()
-            load_module() --> setup_reloc_handler()
-            load_module() --> save_state.c
-            load_module() --> tseg_setup.c
-            stub_setup() --> stub.S
-            note left of stub.S : similarly to coreboot, this should be wrapper for bootstrapping smm_handler.c given the parameters from setup_smihandler_params().
+            smm_loader_init() --> create_map()
+            create_map() --> get_cb_data(): reads the data from CBTABLE 
+            note left of get_cb_data() : similar to the CbParseLib from EDK2
+            smm_loader_init() --> setup_initial_smm_handler()
+            smm_loader_init() --> setup_stack()
+            smm_loader_init() --> setup_reloc_handler()
+            smm_loader_init() --> save_state()
+            smm_loader_init() --> tseg_setup()
             setup_initial_smm_handler() --> stub_setup()
-            stub.S --> smm_handler.c
             setup_reloc_handler() --> stub_setup()
 
-            state smm_handler.c {
-                start_handler() --> smi_lock()
-                start_handler() --> smi_release_lock()
-                start_handler() --> get_pci_address()
-                start_handler() --> soc_handler()
-                note left of soc_handler() : assumes that sufficient information needed is provided by coreboot in the CBTABLE.
-            }
-
-            state save_state.c {
-                init_save_state_region()
-            }
-
-            state tseg_setup.c {
-                allign_tseg_subregion()
-                list_subregions()
-            }
-
-            state stub.S {
-                state "Assembly based wrapper" as s
-            }
         }
 
         state smm_reloc_init.c {
-            relocate() --> get_cpus()
+            smm_relocate_init() --> get_cpus()
             note left of get_cpus() : assumes this information is provided by coreboot in the CTABLE.
-            relocate() --> get_smm_info()
+            smm_relocate_init() --> get_smm_info()
             note left of get_smm_info() : utilizes platform_get_smm_info() from the coreboot SMM interface.
-            relocate() --> trigger_per_cpu()
+            smm_relocate_init() --> trigger_per_cpu()
             trigger_per_cpu() --> install_reloc_handler()
             trigger_per_cpu() --> install_permantent_handler()
         }
