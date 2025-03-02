@@ -204,7 +204,7 @@ The SMM driver that performs SMM initialization and provides CPU specific servic
 ## Roadmap
 Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
 
-## [WIP] Proposed design architecture
+## Proposed design architecture
 The existing solution for moving the SMM ownership to EDK2 payload [[14]](#14) distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
 Issues introduced by these two boot paths mentioned in the documentation are:
  - **S0 boot**: Payloads shall **not** be silicon dependent, hence firmware (coreboot), must provide the payload with silicon specific register definitions. This issue was solved by providing these, as well as SPI layout, using the coreboot table (cbtable). The exact definitions are available given in the source file and omitted here [[14]](#14). 
@@ -235,12 +235,16 @@ stateDiagram-v2
 
     state Payload(LinuxBoot) {
         state "Linux SMM driver" as payload
+        payload --> smram.c
+        payload --> smm_registers.c
+        payload --> spi_info.c
+        payload --> s3_comm.c
         payload --> smm_loader.c
         payload --> smm_reloc_init.c
 
         state smm_loader.c {
             smm_loader_init() --> create_map()
-            create_map() --> get_cb_data(): reads the data from CBTABLE 
+            create_map() --> get_cb_data(): reads the data from from sysfs 
             note left of get_cb_data() : similar to the CbParseLib from EDK2
             smm_loader_init() --> setup_initial_smm_handler()
             smm_loader_init() --> setup_stack()
@@ -305,11 +309,17 @@ stateDiagram-v2
 
 Reusing the coreboot SMM payload interface which was invented with EDK2 support in mind allows to have unified solutions for both EDK2 and LinuxBoot payloads which leads to limited fragmentation of the code, i.e. we do not reinvent the wheel and act in the spirit of DRY principle.
 Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
-The driver itself follows similar principle to coreboot when it comes to modularity, namely, we aim to "load" the inital SMM setup at once. As shown in Fig. 3, as soon as ramstage finishes and coreboot moves control to the payload, the driver reads the necessary data from 
-the coreboot table, creates SMRAM map, initializes TSEG, save state region for the BSP and installs the initial SMI handler. Then the driver performs SMBASE relocation for each CPU if we are on a MP system. By following this approach we assure the driver is keept minimalistic,
-and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers. \
-When on S3 track the idea is again similar to the EDK2 implementation: coreboot performs SMBASE relocation, triggers Linux SMM drivers' SMI handler, which then finishes up SMM lockdown.
+The driver itself follows similar principle to coreboot when it comes to modularity, namely, we aim to "load" the inital SMM setup at once. However, the "loader" driver depends on As shown in Fig. 3, as soon as ramstage finishes and coreboot moves control to the payload, the Linux kernel loads the needed modules in the following order:
+1. coreboot table drivers - drivers responsible for parsing the needed informations stored in the coreboot table to the sysfs:
+   - *smram*
+   - *smm_registers* 
+   - *spi_info*
+   - *s3_comm* 
+2. *smm_loader* - reads the previously parsed informations from sysfs, sets up the addresses accordingly, installs SMI handler.
+3. *smm_reloc_init* - reads CPU specific informations from sysfs, performs SMBASE relocation for each CPU.
 
+By following this approach we assure the driver is keept minimalistic, and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers. \
+When on S3 track the idea is again similar to the EDK2 implementation: coreboot performs SMBASE relocation, triggers Linux SMM drivers' SMI handler, which then finishes up SMM lockdown.
 
 ## [WIP] Proof of Concept
 For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
