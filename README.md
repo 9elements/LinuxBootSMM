@@ -211,10 +211,10 @@ Reusing the coreboot SMM payload interface which was invented with EDK2 support 
 Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
 The flow during the "cold" boot (S0) is shown in Fig.3. As soon as ramstage finishes and the required data has been saved into the CBTABLE, coreboot moves control to the payload, and the Linux kernel loads the needed modules in the following order:
 1. coreboot table drivers - drivers responsible for parsing the needed informations stored in the coreboot table to the sysfs:
-   - *smram*
-   - *smm_registers* 
-   - *spi_info*
-   - *s3_comm* 
+   - *smram*: stores the read-only informations under `/sys/firmware/smm/smram/*`
+   - *smm_registers*: stores the read-only informations under `/sys/firmware/smm/registers/*`
+   - *spi_info*: stores the read-only informations under `/sys/firmware/smm/spi/*`
+   - *s3_comm*: stores the read-only informations under `/sys/firmware/smm/s3/*`
 2. *smm_loader* - reads the previously parsed informations from sysfs, sets up the addresses accordingly, installs SMI handler.
 3. *smm_reloc_init* - reads CPU specific informations from sysfs, performs SMBASE relocation for each CPU.
 
