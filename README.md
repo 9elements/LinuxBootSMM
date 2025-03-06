@@ -215,8 +215,8 @@ The flow during the "cold" boot (S0) is shown in Fig.3. As soon as ramstage fini
    - *smm_registers*
    - *spi_info*
    - *s3_comm*
-2. *smm_loader* - reads the previously parsed informations from sysfs, sets up the addresses accordingly, installs SMI handler.
-3. *smm_reloc_init* - reads CPU specific informations from sysfs, performs SMBASE relocation for each CPU.
+2. *smm_loader* - reads the previously parsed informations, sets up the addresses accordingly, installs SMI handlers.
+3. *smm_reloc_init* - reads CPU specific informations, performs SMBASE relocation for each CPU, calls functions exposed by *smm_loader* module.
 
 The existing solution for moving the SMM ownership to EDK2 payload distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
 Issues introduced by these two boot paths mentioned in the documentation are:
