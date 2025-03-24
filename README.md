@@ -190,16 +190,27 @@ The source files with drivers used in EDK2 are under ```MdeModulePkg/Core/PiSmmC
     - `SmmCoreInstallLoadedImage()`: responsible for installing LoadedImage Protocol - a protocol that is used to describe an Image that has been loaded into the memory.
     - `SmmMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE  *SystemTable)`: main entry point for SMM Core, responsible for installing DXE protocols, reloading SMM Core into SMRAM, and registering SMM Core EntryPoint on the SMI vector.
 
-The SMM driver that performs SMM initialization and provides CPU specific services (similarly to `mp_init.c` for coreboot), finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm.c` consists of the following functions:
-- `IsSmmProfileEnabled()`: checker for the SmmProfile value.
-- `PerformRemainingTasks()`: checks whether SMM Ready to Lock flag is true, and if so performs the following: starts SMM Profile (if enabled by config), checks whether all APs (see section on SMBASE Relocation) enter SMM, sets up the page table for later usage by the OS, configures SMM Code Access Check (if available) and sets SMM Ready to Lock flag back to false.
-- `GetSmiCommandPort()`: getter for system port address of the SMI command port in FADT (Fixed ACPI Description Table).
-- `SmmReadyToLockEventNotify(IN CONST EFI_GUID *Protocol, IN VOID *Interface, IN EFI_HANDLE Handle)`: notification handler for SMM Ready to Lock event.
-- `GetSmmCpuSyncConfigData(IN OUT BOOLEAN *RelaxedMode OPTIONAL, IN OUT UINT64  *SyncTimeout OPTIONAL, IN OUT UINT64  *SyncTimeout2 OPTIONAL)`: getter for *SmmCpuSyncConfig* data.
-- `GetAcpiS3EnableFlag()`: getter for ACPI S3 flag.
-- `GetSupportedMaxLogicalProcessorNumber()`: getter for the maximum nr. of logical CPUs supported by the system.
-- `GetMpInformationFromMpServices(OUT UINTN *NumberOfCpus, OUT UINTN *MaxNumberOfCpus)`: getter for number active of CPUs and maximum number of CPUs and *EFI_PROCESSOR_INFORMATION* for all CPUs.
-- `PiCpuSmmEntry(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE  *SystemTable)`: main entry point for the CPU SMM driver, responsible for saving the memory encryption address from Platform Configuration Data into a global variable, installing SMM Configuration Protocol in the handle database, and registering SMM Ready to Lock Protocol notification.
+The SMM driver that performs SMM initialization and provides CPU specific services (similarly to `mp_init.c` for coreboot), finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm`, and consists of couple of the source files as described in `UefiCpuPkg/PiSmmCpuDxeSmm.inf`. We omit here the source file for helper functions, and focus on describing the "main" source file of the module, namely `UefiCpuPkg/PiSmmCpuDxeSmm.c` which consists of the following functions:
+- `InitializeSmmIdt`: used to initialize Interrupt Descriptor Table to setup exception handlers for SMM.
+- `DumpModuleInfoByIp`: getter for module name by instruction pointer address.
+- `SmmReadSaveState`: used to read date from the Save State Area for given CPU.
+- `SmmWriteSaveState`: used to write data into the Save State Area for given CPU.
+- `InitializeSmm`:
+- `ExecuteFirstSmiInit`: used to send out SMI to BSP and all APs excluting the currently running one (i.e. AP that executes this function).
+- `SmmReadyToLockEventNotify`: Ready To Lock event notification handler.
+- `SmBaseHobCompare`: used to compare two SMM_BASE_HOB_DATA pointers based on ProcessorIndex.
+- `GetSmBase`: getter for SMBASE for all CPUs from SmmBase HOB.
+- `MpInformation2HobCompare`: used to compare two MP_INFORMATION2_HOB_DATA pointers based on ProcessorIndex.
+- `GetMpInformationFromMpServices`: getter for NumberOfCpus, MaxNumberOfCpus and EFI_PROCESSOR_INFORMATION for all CPU from gEfiMpServiceProtocolGuid.
+- `GetMpInformation`: getter for NumberOfCpus, MaxNumberOfCpus and EFI_PROCESSOR_INFORMATION for all CPU from MpInformation2 HOB.
+- `PiCpuSmmEntry`: the module entry point of the driver (could be seen as equivalent of coreboot's `do_mp_init_with_smm`).
+- `CpuSmramRangeCompare`: used to compare two EFI_SMRAM_DESCRIPTOR based on CpuStart.
+- `FindSmramInfo`: getter for SMMR address and size.
+- `ConfigSmmCodeAccessCheckOnCurrentProcessor`: used to comfigure SMM "Code Access Check" on currently running CPU.
+- `ConfigSmmCodeAccessCheck`: used to configure SMM "Code Access Check" for all processors (i.e. for BSP as well as all APs). Calls `ConfigSmmCodeAccessCheckOnCurrentProcessor` on BSP and afterwards on each AP, while keeping the track of locking.
+- `AllocateCodePage`: used to allocate pages for the code once in SMM.
+- `PerformRemainingTasks`:
+- `PerformPreTasks`: calls `RestoreSmmConfigurationInS3` from `UefiCpuPkg/PiSmmCpuDxeSmm/CpuS3.c`, which as the name suggests - restores SMM configuration when we are on the S3 boot path.
 
 ## Roadmap
 Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
