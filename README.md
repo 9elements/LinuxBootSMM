@@ -7,7 +7,7 @@ This repo contains the background of the problem, results of the research on exi
  - [Overview of coreboot SMM initialization](#overview-of-coreboot-smm-initialization)
  - [Overview of EDK2 SMM initialization](#overview-of-edk2-smm-initialization)
  - [Roadmap](#roadmap)
- - [WIP: Proposed design architecture](#proposed-design-architecture)
+ - [Proposed design architecture](#proposed-design-architecture)
  - [WIP: Proof of Concept](#proof-of-concept)
  - [References](#references)
 
@@ -226,9 +226,8 @@ The flow during the "cold" boot (S0) is shown in Fig.3. As soon as ramstage fini
    - *smm_registers*
    - *spi_info*
    - *s3_comm*
-2. *smm_loader* - reads the previously parsed informations, sets up the addresses accordingly, installs SMI handlers.
-3. *smm_reloc_init* - reads CPU specific informations, performs SMBASE relocation for each CPU, calls functions exposed by *smm_loader* module.
-
+2. *smm_handler* - consist of the functions that are to be called from the assembly trampoline, and effectively run in SMM.
+3. *smm_loader* - reads the previously parsed informations, sets up the parameters accordingly, loads assembly trampoline, relocation (C-)handlers, and the permanent handler.
 The existing solution for moving the SMM ownership to EDK2 payload distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
 Issues introduced by these two boot paths mentioned in the documentation are:
  - **S0 boot**: Payloads shall **not** be silicon dependent, hence firmware (coreboot), must provide the payload with silicon specific register definitions. This issue was solved by providing these, as well as SPI layout, using the coreboot table (cbtable). The exact definitions are available given in the source file and omitted here [[14]](#14). 
@@ -247,11 +246,11 @@ stateDiagram-v2
 
         state mp_init.c {
             mp_init_with_smm() --> do_mp_init_with_smm()
-            note right of do_mp_init_with_smm() : Skips SMM initialization.
+            note right of do_mp_init_with_smm() : Skips SMM initialization - only the SoC specific parameters are being setup
         }
         state coreboot_table.c {
             lb_save_restore()
-            note left of lb_save_restore() : Required data (registers, SPI, etc.) is stored in CBTABLE.
+            note left of lb_save_restore() : SoC specific parameters are stored in CBTABLE.
         }
     }
         coreboot --> Payload(LinuxBoot)
@@ -266,28 +265,23 @@ stateDiagram-v2
         payload --> smm_loader.c
         payload --> smm_reloc_init.c
 
-        state smm_loader.c {
-            smm_loader_init() --> create_map()
-            create_map() --> get_cb_data(): reads the data from from sysfs 
-            note left of get_cb_data() : similar to the CbParseLib from EDK2
-            smm_loader_init() --> setup_initial_smm_handler()
-            smm_loader_init() --> setup_stack()
-            smm_loader_init() --> setup_reloc_handler()
-            smm_loader_init() --> save_state()
-            smm_loader_init() --> tseg_setup()
-            setup_initial_smm_handler() --> stub_setup()
-            setup_reloc_handler() --> stub_setup()
-
+        state smm_handler.c {
+            start_handler() --> smi_lock()
+            start_handler() --> smi_release_lock()
+            start_handler() --> get_pci_address()
+            start_handler() --> init_handler()
+            note left of init_handler() : the "entry point" of the permanent handler, this code runs in SMM and is being called by the assembly trampoline.
+            reloc_handler()
+            note left of reloc_handler() : this code runs in SMM and is being indirectly triggered by the SMI from trigger_per_cpu(), and directly being called from the trampoline
         }
 
-        state smm_reloc_init.c {
-            smm_relocate_init() --> get_cpus()
-            note left of get_cpus() : assumes this information is provided by coreboot in the CTABLE.
-            smm_relocate_init() --> get_smm_info()
-            note left of get_smm_info() : utilizes platform_get_smm_info() from the coreboot SMM interface.
-            smm_relocate_init() --> trigger_per_cpu()
-            trigger_per_cpu() --> install_reloc_handler()
-            trigger_per_cpu() --> install_permantent_handler()
+        state smm_loader.c {
+            smm_loader_init() --> get_cb_data(): assumes the previous modules were correctly loaded
+            note left of get_cb_data() : creates structures that are used only by this module (i.e. not exported), allowing to free the memory allocated by the "parser" modules, allowing them to be safely unloaded as soon as get_cb_data() is called.
+            smm_loader_init() --> setup_permanent_handler()
+            smm_loader_init() --> setup_reloc_handler()
+            smm_loader_init --> load_trampoline()
+            smm_loader_init()  --> trigger_per_cpu()
         }
     }
 ```
@@ -304,7 +298,7 @@ stateDiagram-v2
 
         state mp_init.c {
             mp_init_with_smm() --> do_mp_init_with_smm()
-            note left of do_mp_init_with_smm() : Performs SMBASE relocation, does NOT install handlers.
+            note left of do_mp_init_with_smm() : Performs SMBASE relocation, does NOT install the permanent handler.
         }
         state coreboot_table.c {
             lb_save_restore()
@@ -323,8 +317,9 @@ stateDiagram-v2
             start_handler() --> smi_lock()
             start_handler() --> smi_release_lock()
             start_handler() --> get_pci_address()
-            start_handler() --> soc_handler()
-            note left of soc_handler() : assumes that sufficient information needed is provided by coreboot in the CBTABLE and by the smm_core_support.
+            start_handler() --> init_handler()
+            note left of init_handler() : the "entry point" of the permanent handler, this code runs in SMM and is being called by SMI sent from the linux_s3_restore(). On S3 suspend, this code resides in SMRAM and waits to be called.
+            reloc_handler()
         }
     }
 ```
