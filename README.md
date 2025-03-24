@@ -262,8 +262,8 @@ stateDiagram-v2
         payload --> smm_registers.c
         payload --> spi_info.c
         payload --> s3_comm.c
+        payload --> smm_handler.c
         payload --> smm_loader.c
-        payload --> smm_reloc_init.c
 
         state smm_handler.c {
             start_handler() --> smi_lock()
@@ -280,7 +280,7 @@ stateDiagram-v2
             note left of get_cb_data() : creates structures that are used only by this module (i.e. not exported), allowing to free the memory allocated by the "parser" modules, allowing them to be safely unloaded as soon as get_cb_data() is called.
             smm_loader_init() --> setup_permanent_handler()
             smm_loader_init() --> setup_reloc_handler()
-            smm_loader_init --> load_trampoline()
+            smm_loader_init() --> load_trampoline()
             smm_loader_init()  --> trigger_per_cpu()
         }
     }
