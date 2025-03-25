@@ -195,7 +195,7 @@ The SMM driver that performs SMM initialization and provides CPU specific servic
 - `DumpModuleInfoByIp`: getter for module name by instruction pointer address.
 - `SmmReadSaveState`: used to read date from the Save State Area for given CPU.
 - `SmmWriteSaveState`: used to write data into the Save State Area for given CPU.
-- `InitializeSmm`:
+- `InitializeSmm`: used to initialize SMM on given processor, this code runs in SMM and is invoked once the trampoline calls C handler (see `SmiRendezvous` from the `UefiCpuPkg/PiSmmCpuDxeSmm/MpService.c`).
 - `ExecuteFirstSmiInit`: used to send out SMI to BSP and all APs excluting the currently running one (i.e. AP that executes this function).
 - `SmmReadyToLockEventNotify`: Ready To Lock event notification handler.
 - `SmBaseHobCompare`: used to compare two SMM_BASE_HOB_DATA pointers based on ProcessorIndex.
@@ -209,7 +209,7 @@ The SMM driver that performs SMM initialization and provides CPU specific servic
 - `ConfigSmmCodeAccessCheckOnCurrentProcessor`: used to comfigure SMM "Code Access Check" on currently running CPU.
 - `ConfigSmmCodeAccessCheck`: used to configure SMM "Code Access Check" for all processors (i.e. for BSP as well as all APs). Calls `ConfigSmmCodeAccessCheckOnCurrentProcessor` on BSP and afterwards on each AP, while keeping the track of locking.
 - `AllocateCodePage`: used to allocate pages for the code once in SMM.
-- `PerformRemainingTasks`:
+- `PerformRemainingTasks`: as the name suggests, it is used to perform remaining tasks after the initialization, and namely: starting SMM Profile (if it is available), enabling paging and setting up restricted areas in the page table, and checking whether SMM is locked before moving on.
 - `PerformPreTasks`: calls `RestoreSmmConfigurationInS3` from `UefiCpuPkg/PiSmmCpuDxeSmm/CpuS3.c`, which as the name suggests - restores SMM configuration when we are on the S3 boot path.
 
 ## Roadmap
