@@ -311,8 +311,10 @@ and easy to review, without the need of jumping through multiple modules and und
 When on S3 track the idea is again similar to the EDK2 implementation: coreboot performs SMBASE relocation, triggers Linux SMM drivers' SMI handler, which then finishes up SMM lockdown.
 
 
-## [WIP] Proof of Concept
+## Proof of Concept
 For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
+
+The source files for the initial PoC, together with the list of the not current issues may be found [here]().
 
 ## References
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
