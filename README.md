@@ -7,7 +7,7 @@ This repo contains the background of the problem, results of the research on exi
  - [Overview of coreboot SMM initialization](#overview-of-coreboot-smm-initialization)
  - [Overview of EDK2 SMM initialization](#overview-of-edk2-smm-initialization)
  - [Roadmap](#roadmap)
- - [WIP: Proposed design architecture](#proposed-design-architecture)
+ - [Proposed design architecture](#proposed-design-architecture)
  - [WIP: Proof of Concept](#proof-of-concept)
  - [References](#references)
 
@@ -73,13 +73,13 @@ The ```src/cpu/x86/smm``` consists of:
     - ```smm_place_entry_code(const unsigned int num_cpus)```: responsible for placing the init code for each CPUs, that is, the SMM Stub code from smm_stub.S
     - ```smm_setup_stack(const uintptr_t perm_smbase, const size_t perm_smram_size, const unsigned int total_cpus, const size_t stack_size)```: sets up the stack memory for all CPUs by checking whether the provided stack size is large enough, checking whether the provided stack size if assign to each available CPU will fit the SMRAM. Finally it sets the top address of the stack.
     - ```smm_stub_place_staggered_entry_points(const struct smm_loader_params *params)```: places the staggered entry points for each CPU, these points are staggered by the save state size per CPU extending down from SMM_ENTRY_OFFSET (8000H).
-    - ```smm_module_setup_stub(const uintptr_t smbase, const size_t smm_size, struct smm_loader_params *params)```: sets up the stub. It relies on SMM map to avoid the save state areas overlapping with the stub.
+    - ```smm_module_setup_stub(const uintptr_t smbase, const size_t smm_size, struct smm_loader_params *params)```: sets up the stub and places it at default SMBASE where it waits to be invoked by issuing an SMI. It relies on SMM map to avoid the save state areas overlapping with the stub.
     - ```smm_setup_relocation_handler(struct smm_loader_params *params)```: performs parameters checks, that is, it checks whether there is no more than 1 concurrent save state for the relocation handler, whether the handler is defined, and whether the number of CPUs is set. Afterwards, the parameters are passed by to the `smm_module_setup_stub`.
     - ```setup_smihandler_params(struct smm_runtime *mod_params, struct smm_loader_params *loader_params)```: assigns SMI handler parameters based on the build configuration, current SMRAM region's base address and size, and provided structure with parameters (`smm_loader_params`).
     - ```print_region(const char *name, const struct region region)```: prints informations about the memory region.
     - ```append_and_check_region(const struct region smram, const struct region region, struct region *region_list, const char *name)```: used to append the region list with a new region after checking whether given region is a subregion of SMRAM (i.e. it lies withing SMRAM), and whether there are no overlaps with previous regions on the region list.
     - ```install_page_table(const uintptr_t handler_base)```: sets up the page table entries and returns the address of the lop-level page table entry in page map level-4 entry.
-    - ```smm_load_module(const uintptr_t smram_base, const size_t smram_size, struct smm_loader_params *params)```: places the complete SMM module by calling the above discussed functions in the provided region as show in the table below.
+    - ```smm_load_module(const uintptr_t smram_base, const size_t smram_size, struct smm_loader_params *params)```: places the complete SMM module by calling the above discussed functions in the provided region as show in the table below. Used for runtime SMM handler, the relocation handler is invoked differently (see below).
         | SMM module      ||
         |-----------------|-----------------| 
         |---------------------------------|<- smram + size|
@@ -97,7 +97,7 @@ The ```src/cpu/x86/smm``` consists of:
         |    stacks       | 
         |---------------------------------|<- smram start |
 
- - **smm_stub.S** - a generic wrapper for bootstrapping a C-based SMM handler, it puts the CPU into the protected mode with a stack and calls into the C handler (smm_module_handler.c)
+ - **smm_stub.S** - a generic wrapper for bootstrapping a C-based SMM handler, it puts the CPU into the protected mode with a stack and calls into the C handler, 
  - **tseg_region.c** - used for aligning the region in the Top of Low Memory Segment (TSEG) for SMM. Based on the values of SMM_TSEG and SMM_ASEG from the build configuration, the start and size of the region are alligned for either TSEG or ASEG. Note that ASEG is deprecated and only used for QEMU emulation target.
  - **pci_resource_store.c** - compiled if SMM_PCI_RESOURCE_STORE is set to "y" - not the case by default, currently only enabled for Intel Xeon SP SoC's and AMD SoC's that require AMD common XHCI support. Support for storing PCI resources in SMRAM allows SMM to tell whether they have been altered. Functions defined
  here are:
@@ -110,16 +110,16 @@ When coreboot is built for multiprocessor system, with PARALLEL_MP set to "y", t
 and the remaining ones are designated as APs. After selection, the BSP executes BIOS bootstrap code. We omit the detailed description of usual MP initialization protocol, and focus on describing how coreboot approaches SMBASE relocation once APs receive SIPI. For more details on MP init we refer to coreboot's and Intel's documentations [[10]](#10), [[11]](#11).
 The function related to SMM are:
  - `smm_initiate_relocation_parallel()`: used to send SMI to self without any serialization. 
- - `smm_initiate_relocation()`: used to send SMI to self with single execution.
+ - `smm_initiate_relocation()`: sends the SMI through APIC once the parameters are set, resulting in CPU "landing" into **smm_stub.S** which will then prepare CPU and call into the C handler.
  - `is_smm_enabled()`: returns true if [HAVE_SMI_HANDLER ∧ mp_state.do_smm] is true.
  - `smm_disable()`: setter for mp_state.do_smm
  - `smm_enable()`: setter for mp_state.do_smm, under condition that HAVE_SMI_HANDLER flag is set to "y".
- - `smm_do_relocation(void *arg)`: used to compute the location of the new SMBASE.
+ - `smm_do_relocation(void *arg)`: used to compute the location of the new SMBASE, this code runs in SMM, and is called by the **smm_stub.S** after CPU is prepared.
  - `install_relocation_handler(int num_cpus, size_t save_state_size)`: when X86_SMM_SKIP_RELOCATION_HANDLER flag in the build configuration is not enabled, it will call `smm_setup_relocation_handler()` (see above) with provided number of CPUs and save state size, new SMBASE location (computed with `smm_do_relocation()`) and value stored in CR3 register.
  - `install_permantent_handler(int num_cpus, uintptr_t smbase, size_t smsize, size_t save_state_size)`: upon execution, all CPUs will relocate to the permanent handler. This function sets parameters needed for all CPUs, and simply provides beginning of SMRAM region, number of CPUs using the handler, save state and stack sizes for each CPU.
  - `load_smm_handlers()`: used to load SMM handlers as a part of MP init. If SMM is enabled, it first sets up the stacks (see `smm_setup_stack()` description above) and installs SMM relocation and permanent handlers. Finally it indicates in mp_state structure that SMM handlers have been loaded.
  - `trigger_smm_relocation()`: used to trigger SMM as a part of MP init. Checks whether SMM is enabled and only triggers SMM mode for the current CPU if this is the case.
- - `fill_mp_state_smm(struct mp_state *state, const struct mp_ops *ops)`:
+ - `fill_mp_state_smm(struct mp_state *state, const struct mp_ops *ops)`: calls the silicon dependent `get_smm_info()` to obtain parameters such as SMRAM size, permanent SMBASE and save state size.
  - `do_mp_init_with_smm(struct bus *cpu_bus, const struct mp_ops *mp_ops)`: the mp_ops argument is used to drive the multiprocess initialization. The sequence of operations is the following:
     1. pre_mp_init()
     2. get_cpu_count()
@@ -190,22 +190,45 @@ The source files with drivers used in EDK2 are under ```MdeModulePkg/Core/PiSmmC
     - `SmmCoreInstallLoadedImage()`: responsible for installing LoadedImage Protocol - a protocol that is used to describe an Image that has been loaded into the memory.
     - `SmmMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE  *SystemTable)`: main entry point for SMM Core, responsible for installing DXE protocols, reloading SMM Core into SMRAM, and registering SMM Core EntryPoint on the SMI vector.
 
-The SMM driver that performs SMM initialization and provides CPU specific services (similarly to `mp_init.c` for coreboot), finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm.c` consists of the following functions:
-- `IsSmmProfileEnabled()`: checker for the SmmProfile value.
-- `PerformRemainingTasks()`: checks whether SMM Ready to Lock flag is true, and if so performs the following: starts SMM Profile (if enabled by config), checks whether all APs (see section on SMBASE Relocation) enter SMM, sets up the page table for later usage by the OS, configures SMM Code Access Check (if available) and sets SMM Ready to Lock flag back to false.
-- `GetSmiCommandPort()`: getter for system port address of the SMI command port in FADT (Fixed ACPI Description Table).
-- `SmmReadyToLockEventNotify(IN CONST EFI_GUID *Protocol, IN VOID *Interface, IN EFI_HANDLE Handle)`: notification handler for SMM Ready to Lock event.
-- `GetSmmCpuSyncConfigData(IN OUT BOOLEAN *RelaxedMode OPTIONAL, IN OUT UINT64  *SyncTimeout OPTIONAL, IN OUT UINT64  *SyncTimeout2 OPTIONAL)`: getter for *SmmCpuSyncConfig* data.
-- `GetAcpiS3EnableFlag()`: getter for ACPI S3 flag.
-- `GetSupportedMaxLogicalProcessorNumber()`: getter for the maximum nr. of logical CPUs supported by the system.
-- `GetMpInformationFromMpServices(OUT UINTN *NumberOfCpus, OUT UINTN *MaxNumberOfCpus)`: getter for number active of CPUs and maximum number of CPUs and *EFI_PROCESSOR_INFORMATION* for all CPUs.
-- `PiCpuSmmEntry(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE  *SystemTable)`: main entry point for the CPU SMM driver, responsible for saving the memory encryption address from Platform Configuration Data into a global variable, installing SMM Configuration Protocol in the handle database, and registering SMM Ready to Lock Protocol notification.
+The SMM driver that performs SMM initialization and provides CPU specific services (similarly to `mp_init.c` for coreboot), finds itself under `UefiCpuPkg/PiSmmCpuDxeSmm`, and consists of couple of the source files as described in `UefiCpuPkg/PiSmmCpuDxeSmm.inf`. We omit here the source file for helper functions, and focus on describing the "main" source file of the module, namely `UefiCpuPkg/PiSmmCpuDxeSmm.c` which consists of the following functions:
+- `InitializeSmmIdt`: used to initialize Interrupt Descriptor Table to setup exception handlers for SMM.
+- `DumpModuleInfoByIp`: getter for module name by instruction pointer address.
+- `SmmReadSaveState`: used to read date from the Save State Area for given CPU.
+- `SmmWriteSaveState`: used to write data into the Save State Area for given CPU.
+- `InitializeSmm`: used to initialize SMM on given processor, this code runs in SMM and is invoked once the trampoline calls C handler (see `SmiRendezvous` from the `UefiCpuPkg/PiSmmCpuDxeSmm/MpService.c`).
+- `ExecuteFirstSmiInit`: used to send out SMI to BSP and all APs excluting the currently running one (i.e. AP that executes this function).
+- `SmmReadyToLockEventNotify`: Ready To Lock event notification handler.
+- `SmBaseHobCompare`: used to compare two SMM_BASE_HOB_DATA pointers based on ProcessorIndex.
+- `GetSmBase`: getter for SMBASE for all CPUs from SmmBase HOB.
+- `MpInformation2HobCompare`: used to compare two MP_INFORMATION2_HOB_DATA pointers based on ProcessorIndex.
+- `GetMpInformationFromMpServices`: getter for NumberOfCpus, MaxNumberOfCpus and EFI_PROCESSOR_INFORMATION for all CPU from gEfiMpServiceProtocolGuid.
+- `GetMpInformation`: getter for NumberOfCpus, MaxNumberOfCpus and EFI_PROCESSOR_INFORMATION for all CPU from MpInformation2 HOB.
+- `PiCpuSmmEntry`: the module entry point of the driver (could be seen as equivalent of coreboot's `do_mp_init_with_smm`).
+- `CpuSmramRangeCompare`: used to compare two EFI_SMRAM_DESCRIPTOR based on CpuStart.
+- `FindSmramInfo`: getter for SMMR address and size.
+- `ConfigSmmCodeAccessCheckOnCurrentProcessor`: used to comfigure SMM "Code Access Check" on currently running CPU.
+- `ConfigSmmCodeAccessCheck`: used to configure SMM "Code Access Check" for all processors (i.e. for BSP as well as all APs). Calls `ConfigSmmCodeAccessCheckOnCurrentProcessor` on BSP and afterwards on each AP, while keeping the track of locking.
+- `AllocateCodePage`: used to allocate pages for the code once in SMM.
+- `PerformRemainingTasks`: as the name suggests, it is used to perform remaining tasks after the initialization, and namely: starting SMM Profile (if it is available), enabling paging and setting up restricted areas in the page table, and checking whether SMM is locked before moving on.
+- `PerformPreTasks`: calls `RestoreSmmConfigurationInS3` from `UefiCpuPkg/PiSmmCpuDxeSmm/CpuS3.c`, which as the name suggests - restores SMM configuration when we are on the S3 boot path.
 
 ## Roadmap
 Please see [LinuxBootSMM roadmap](https://github.com/orgs/9elements/projects/35).
 
-## [WIP] Proposed design architecture
-The existing solution for moving the SMM ownership to EDK2 payload [[14]](#14) distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
+## Proposed design architecture
+The proposed design architecture follows coreboot's "monolithic" approach to the SMM setup. By following this approach we assure the driver is kept minimalistic, and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers. \
+The number of modules loaded by the Linux kernel is being kept to the minimum, with effectively 5 kernel modules being loaded to setup the SMM. We rely on the coreboot's downstream SMM payload interface [[14]](#14), which was initially designed to improve security of coreboot's support for UEFI Authenticated Variables, when using coreboot+EDK2 (as payload) setup.
+Reusing the coreboot SMM payload interface which was invented with EDK2 support in mind allows to have unified solutions for both EDK2 and LinuxBoot payloads which leads to limited fragmentation of the code, i.e. we do not reinvent the wheel and act in the spirit of DRY principle.
+Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
+The flow during the "cold" boot (S0) is shown in Fig.3. As soon as ramstage finishes and the required data has been saved into the CBTABLE, coreboot moves control to the payload, and the Linux kernel loads the needed modules in the following order:
+1. coreboot table drivers - drivers responsible for parsing the needed informations stored in the coreboot table:
+   - *smram*
+   - *smm_registers*
+   - *spi_info*
+   - *s3_comm*
+2. *smm_handler* - consist of the functions that are to be called from the assembly trampoline, and effectively run in SMM.
+3. *smm_loader* - reads the previously parsed informations, sets up the parameters accordingly, loads assembly trampoline, relocation (C-)handlers, and the permanent handler.
+The existing solution for moving the SMM ownership to EDK2 payload distinguishes two boot paths [[15]](#15) which require different approaches, these boot paths are: S0 boot - a basic boot path "boot with full configuration", i.e. usual power-up, and S3 Resume - "save to RAM resume", the system configuration is saved and system is placed in S3 "sleep" state, during the S3 resume phase the firmware loads the saved state.
 Issues introduced by these two boot paths mentioned in the documentation are:
  - **S0 boot**: Payloads shall **not** be silicon dependent, hence firmware (coreboot), must provide the payload with silicon specific register definitions. This issue was solved by providing these, as well as SPI layout, using the coreboot table (cbtable). The exact definitions are available given in the source file and omitted here [[14]](#14). 
  - **S3 boot**: On the S3 boot path, the payload execution is skipped, hence the minimal relocation has to be done by coreboot. The initial 4k of SMRAM containing software SMI number and SMBASE addresses for CPUs is preserved. coreboot then, performs SMM relocation and triggers payloads' software SMI.
@@ -223,11 +246,11 @@ stateDiagram-v2
 
         state mp_init.c {
             mp_init_with_smm() --> do_mp_init_with_smm()
-            note right of do_mp_init_with_smm() : Skips SMM initialization.
+            note right of do_mp_init_with_smm() : Skips SMM initialization - only the SoC specific parameters are being setup
         }
         state coreboot_table.c {
             lb_save_restore()
-            note left of lb_save_restore() : Required data (registers, SPI, etc.) is stored in CBTABLE.
+            note left of lb_save_restore() : SoC specific parameters are stored in CBTABLE.
         }
     }
         coreboot --> Payload(LinuxBoot)
@@ -235,31 +258,30 @@ stateDiagram-v2
 
     state Payload(LinuxBoot) {
         state "Linux SMM driver" as payload
+        payload --> smram.c
+        payload --> smm_registers.c
+        payload --> spi_info.c
+        payload --> s3_comm.c
+        payload --> smm_handler.c
         payload --> smm_loader.c
-        payload --> smm_reloc_init.c
 
-        state smm_loader.c {
-            smm_loader_init() --> create_map()
-            create_map() --> get_cb_data(): reads the data from CBTABLE 
-            note left of get_cb_data() : similar to the CbParseLib from EDK2
-            smm_loader_init() --> setup_initial_smm_handler()
-            smm_loader_init() --> setup_stack()
-            smm_loader_init() --> setup_reloc_handler()
-            smm_loader_init() --> save_state()
-            smm_loader_init() --> tseg_setup()
-            setup_initial_smm_handler() --> stub_setup()
-            setup_reloc_handler() --> stub_setup()
-
+        state smm_handler.c {
+            start_handler() --> smi_lock()
+            start_handler() --> smi_release_lock()
+            start_handler() --> get_pci_address()
+            start_handler() --> init_handler()
+            note left of init_handler() : the "entry point" of the permanent handler, this code runs in SMM and is being called by the assembly trampoline.
+            reloc_handler()
+            note left of reloc_handler() : this code runs in SMM and is being indirectly triggered by the SMI from trigger_per_cpu(), and directly being called from the trampoline
         }
 
-        state smm_reloc_init.c {
-            smm_relocate_init() --> get_cpus()
-            note left of get_cpus() : assumes this information is provided by coreboot in the CTABLE.
-            smm_relocate_init() --> get_smm_info()
-            note left of get_smm_info() : utilizes platform_get_smm_info() from the coreboot SMM interface.
-            smm_relocate_init() --> trigger_per_cpu()
-            trigger_per_cpu() --> install_reloc_handler()
-            trigger_per_cpu() --> install_permantent_handler()
+        state smm_loader.c {
+            smm_loader_init() --> get_cb_data(): assumes the previous modules were correctly loaded
+            note left of get_cb_data() : creates structures that are used only by this module (i.e. not exported), allowing to free the memory allocated by the "parser" modules, allowing them to be safely unloaded as soon as get_cb_data() is called.
+            smm_loader_init() --> setup_permanent_handler()
+            smm_loader_init() --> setup_reloc_handler()
+            smm_loader_init() --> load_trampoline()
+            smm_loader_init()  --> trigger_per_cpu()
         }
     }
 ```
@@ -276,7 +298,7 @@ stateDiagram-v2
 
         state mp_init.c {
             mp_init_with_smm() --> do_mp_init_with_smm()
-            note left of do_mp_init_with_smm() : Performs SMBASE relocation, does NOT install handlers.
+            note left of do_mp_init_with_smm() : Performs SMBASE relocation, does NOT install the permanent handler.
         }
         state coreboot_table.c {
             lb_save_restore()
@@ -295,21 +317,18 @@ stateDiagram-v2
             start_handler() --> smi_lock()
             start_handler() --> smi_release_lock()
             start_handler() --> get_pci_address()
-            start_handler() --> soc_handler()
-            note left of soc_handler() : assumes that sufficient information needed is provided by coreboot in the CBTABLE and by the smm_core_support.
+            start_handler() --> init_handler()
+            note left of init_handler() : the "entry point" of the permanent handler, this code runs in SMM and is being called by SMI sent from the linux_s3_restore(). On S3 suspend, this code resides in SMRAM and waits to be called.
+            reloc_handler()
         }
     }
 ```
 <figcaption>Figure 4: S3 Resume boot path SMM initialization flow</figcaption>
 <br>
-
-Reusing the coreboot SMM payload interface which was invented with EDK2 support in mind allows to have unified solutions for both EDK2 and LinuxBoot payloads which leads to limited fragmentation of the code, i.e. we do not reinvent the wheel and act in the spirit of DRY principle.
-Nevertheless, the Linux SMM driver owns SMM, taking full advantage of benefits that come with the nature of Linux driver. \
-The driver itself follows similar principle to coreboot when it comes to modularity, namely, we aim to "load" the inital SMM setup at once. As shown in Fig. 3, as soon as ramstage finishes and coreboot moves control to the payload, the driver reads the necessary data from 
-the coreboot table, creates SMRAM map, initializes TSEG, save state region for the BSP and installs the initial SMI handler. Then the driver performs SMBASE relocation for each CPU if we are on a MP system. By following this approach we assure the driver is keept minimalistic,
-and easy to review, without the need of jumping through multiple modules and understanding the connections and execution flow between them, which would rise-up entry threshold for potential reviewers. \
 When on S3 track the idea is again similar to the EDK2 implementation: coreboot performs SMBASE relocation, triggers Linux SMM drivers' SMI handler, which then finishes up SMM lockdown.
+<br></br>
 
+**NOTE**: the diagrams shown at Fig. 3 and 4, as well as the detailed descriptions of the execution flow (especially when on S3 path) are currently describing the design on very high level, and will be constantly updated together with implementation.
 
 ## Proof of Concept
 For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
