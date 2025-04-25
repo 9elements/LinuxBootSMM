@@ -1,6 +1,6 @@
-From 21d4c31ed14cd8d45c9cd91806554cd8fbe3d5f3 Mon Sep 17 00:00:00 2001
+From 3aa8c9f8e6cd39852fd5773ab25878f6099c5f84 Mon Sep 17 00:00:00 2001
 From: Michal Gorlas <michal.gorlas@9elements.com>
-Date: Fri, 25 Apr 2025 18:41:58 +0200
+Date: Fri, 25 Apr 2025 21:09:36 +0200
 Subject: [PATCH] [PATCH 0/3] drivers/firmware/smm: parsing SMM related
  informations from coreboot table
 
@@ -14,10 +14,10 @@ Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
  drivers/firmware/smm/Kconfig             | 26 +++++++
  drivers/firmware/smm/Makefile            |  4 +
  drivers/firmware/smm/mm_info.c           | 62 ++++++++++++++++
- drivers/firmware/smm/s3_comm.c           | 68 +++++++++++++++++
+ drivers/firmware/smm/s3_comm.c           | 66 +++++++++++++++++
  drivers/firmware/smm/smm.h               | 65 +++++++++++++++++
  drivers/firmware/smm/smram.c             | 93 ++++++++++++++++++++++++
- 9 files changed, 377 insertions(+), 12 deletions(-)
+ 9 files changed, 375 insertions(+), 12 deletions(-)
  create mode 100644 drivers/firmware/smm/Kconfig
  create mode 100644 drivers/firmware/smm/Makefile
  create mode 100644 drivers/firmware/smm/mm_info.c
@@ -204,13 +204,13 @@ index 000000000000..3ff3691c2d27
 +endif
 diff --git a/drivers/firmware/smm/Makefile b/drivers/firmware/smm/Makefile
 new file mode 100644
-index 000000000000..cd4261c5347c
+index 000000000000..e14bca80ecd8
 --- /dev/null
 +++ b/drivers/firmware/smm/Makefile
 @@ -0,0 +1,4 @@
 +# SPDX-License-Identifier: GPL-2.0
 +obj-y += smram.o
-+obj-y += mm_info.o 
++obj-y += mm_info.o
 +obj-$(CONFIG_S3_SUPPORT_SMM) += s3_comm.o
 diff --git a/drivers/firmware/smm/mm_info.c b/drivers/firmware/smm/mm_info.c
 new file mode 100644
@@ -282,10 +282,10 @@ index 000000000000..09b4688e4d6a
 +MODULE_LICENSE("GPL v2");
 diff --git a/drivers/firmware/smm/s3_comm.c b/drivers/firmware/smm/s3_comm.c
 new file mode 100644
-index 000000000000..ae8bb56ccf29
+index 000000000000..1b17aefe7432
 --- /dev/null
 +++ b/drivers/firmware/smm/s3_comm.c
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,66 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * s3_comm.c
@@ -354,7 +354,7 @@ index 000000000000..ae8bb56ccf29
 +MODULE_LICENSE("GPL v2");
 diff --git a/drivers/firmware/smm/smm.h b/drivers/firmware/smm/smm.h
 new file mode 100644
-index 000000000000..186d3097add7
+index 000000000000..3f0f63baefa0
 --- /dev/null
 +++ b/drivers/firmware/smm/smm.h
 @@ -0,0 +1,65 @@
