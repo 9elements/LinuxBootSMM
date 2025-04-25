@@ -312,7 +312,7 @@ index 000000000000..1b17aefe7432
 +	if (s3_cbtable_info->tag != CB_TAG_PLD_S3_COMMUNICATION)
 +		return -ENXIO;
 +
-+	s3_info = kmalloc(sizeof(*s3_comm_info), GFP_KERNEL);
++	s3_info = kmalloc(sizeof(*s3_info), GFP_KERNEL);
 +	s3_info->physical_start =
 +		unpack_cbuint64(s3_cbtable_info->comm_buffer.physical_start);
 +	s3_info->pld_acpi_s3_enable = s3_cbtable_info->pld_acpi_s3_enable;
