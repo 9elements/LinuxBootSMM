@@ -1,0 +1,527 @@
+From 21d4c31ed14cd8d45c9cd91806554cd8fbe3d5f3 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Fri, 25 Apr 2025 18:41:58 +0200
+Subject: [PATCH] [PATCH 0/3] drivers/firmware/smm: parsing SMM related
+ informations from coreboot table
+
+place holder for now
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ drivers/firmware/Kconfig                 |  1 +
+ drivers/firmware/Makefile                |  1 +
+ drivers/firmware/google/coreboot_table.h | 69 +++++++++++++++---
+ drivers/firmware/smm/Kconfig             | 26 +++++++
+ drivers/firmware/smm/Makefile            |  4 +
+ drivers/firmware/smm/mm_info.c           | 62 ++++++++++++++++
+ drivers/firmware/smm/s3_comm.c           | 68 +++++++++++++++++
+ drivers/firmware/smm/smm.h               | 65 +++++++++++++++++
+ drivers/firmware/smm/smram.c             | 93 ++++++++++++++++++++++++
+ 9 files changed, 377 insertions(+), 12 deletions(-)
+ create mode 100644 drivers/firmware/smm/Kconfig
+ create mode 100644 drivers/firmware/smm/Makefile
+ create mode 100644 drivers/firmware/smm/mm_info.c
+ create mode 100644 drivers/firmware/smm/s3_comm.c
+ create mode 100644 drivers/firmware/smm/smm.h
+ create mode 100644 drivers/firmware/smm/smram.c
+
+diff --git a/drivers/firmware/Kconfig b/drivers/firmware/Kconfig
+index aadc395ee168..32a973ae0081 100644
+--- a/drivers/firmware/Kconfig
++++ b/drivers/firmware/Kconfig
+@@ -280,6 +280,7 @@ source "drivers/firmware/psci/Kconfig"
+ source "drivers/firmware/qcom/Kconfig"
+ source "drivers/firmware/samsung/Kconfig"
+ source "drivers/firmware/smccc/Kconfig"
++source "drivers/firmware/smm/Kconfig"
+ source "drivers/firmware/tegra/Kconfig"
+ source "drivers/firmware/xilinx/Kconfig"
+ 
+diff --git a/drivers/firmware/Makefile b/drivers/firmware/Makefile
+index 4ddec2820c96..3bbaceea0206 100644
+--- a/drivers/firmware/Makefile
++++ b/drivers/firmware/Makefile
+@@ -36,5 +36,6 @@ obj-y				+= psci/
+ obj-y				+= qcom/
+ obj-y				+= samsung/
+ obj-y				+= smccc/
++obj-$(CONFIG_SMM_DRIVER)	+= smm/
+ obj-y				+= tegra/
+ obj-y				+= xilinx/
+diff --git a/drivers/firmware/google/coreboot_table.h b/drivers/firmware/google/coreboot_table.h
+index bb6f0f7299b4..6ad9c2b60ea1 100644
+--- a/drivers/firmware/google/coreboot_table.h
++++ b/drivers/firmware/google/coreboot_table.h
+@@ -7,6 +7,8 @@
+  * Copyright 2014 Gerd Hoffmann <kraxel@redhat.com>
+  * Copyright 2017 Google Inc.
+  * Copyright 2017 Samuel Holland <samuel@sholland.org>
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
+  */
+ 
+ #ifndef __COREBOOT_TABLE_H
+@@ -15,6 +17,11 @@
+ #include <linux/device.h>
+ #include <linux/mod_devicetable.h>
+ 
++struct cbuint64 {
++	u32 lo;
++	u32 hi;
++};
++
+ /* Coreboot table header structure */
+ struct coreboot_table_header {
+ 	char signature[4];
+@@ -41,7 +48,6 @@ struct lb_cbmem_ref {
+ };
+ 
+ #define LB_TAG_CBMEM_ENTRY 0x31
+-
+ /* Corresponds to LB_TAG_CBMEM_ENTRY */
+ struct lb_cbmem_entry {
+ 	u32 tag;
+@@ -52,6 +58,42 @@ struct lb_cbmem_entry {
+ 	u32 id;
+ };
+ 
++/* Corresponds to CB_TAG_PLD_SMM_SMRAM */
++#define CB_TAG_PLD_SMM_SMRAM 0x51
++struct lb_pld_smram_descriptor {
++	struct cbuint64 physical_start;
++	struct cbuint64 physical_size;
++	struct cbuint64 region_state;
++};
++
++struct lb_pld_smram_descriptor_block {
++	u32 tag;
++	u32 size;
++	u32 number_of_smm_regions;
++	struct lb_pld_smram_descriptor descriptor[];
++};
++
++/* Corresponds to CB_TAG_PLD_S3_COMMUNICATION */
++#define CB_TAG_PLD_S3_COMMUNICATION 0x54
++struct lb_pld_s3_communication {
++	u32 tag;
++	u32 size;
++	struct lb_pld_smram_descriptor comm_buffer;
++	u8 pld_acpi_s3_enable;
++	u8 pad[3];
++};
++
++/* Corresponds to CB_TAG_PLD_MM_INTERFACE_INFO */
++#define CB_TAG_PLD_MM_INTERFACE_INFO 0x53
++struct lb_pld_mm_interface_info {
++	u32 tag;
++	u32 size;
++	u8 revision;
++	u8 requires_long_mode_call;
++	u8 register_mm_entry_swsmi;
++	u8 pad;
++};
++
+ /* Describes framebuffer setup by coreboot */
+ struct lb_framebuffer {
+ 	u32 tag;
+@@ -61,15 +103,15 @@ struct lb_framebuffer {
+ 	u32 x_resolution;
+ 	u32 y_resolution;
+ 	u32 bytes_per_line;
+-	u8  bits_per_pixel;
+-	u8  red_mask_pos;
+-	u8  red_mask_size;
+-	u8  green_mask_pos;
+-	u8  green_mask_size;
+-	u8  blue_mask_pos;
+-	u8  blue_mask_size;
+-	u8  reserved_mask_pos;
+-	u8  reserved_mask_size;
++	u8 bits_per_pixel;
++	u8 red_mask_pos;
++	u8 red_mask_size;
++	u8 green_mask_pos;
++	u8 green_mask_size;
++	u8 blue_mask_pos;
++	u8 blue_mask_size;
++	u8 reserved_mask_pos;
++	u8 reserved_mask_size;
+ };
+ 
+ /* A device, additionally with information from coreboot. */
+@@ -80,6 +122,9 @@ struct coreboot_device {
+ 		struct lb_cbmem_ref cbmem_ref;
+ 		struct lb_cbmem_entry cbmem_entry;
+ 		struct lb_framebuffer framebuffer;
++		struct lb_pld_smram_descriptor_block smram_info;
++		struct lb_pld_s3_communication s3_comm;
++		struct lb_pld_mm_interface_info mm_info;
+ 		DECLARE_FLEX_ARRAY(u8, raw);
+ 	};
+ };
+@@ -112,8 +157,8 @@ void coreboot_driver_unregister(struct coreboot_driver *driver);
+  * boilerplate.  Each module may only use this macro once, and
+  * calling it replaces module_init() and module_exit()
+  */
+-#define module_coreboot_driver(__coreboot_driver) \
++#define module_coreboot_driver(__coreboot_driver)                  \
+ 	module_driver(__coreboot_driver, coreboot_driver_register, \
+-			coreboot_driver_unregister)
++		      coreboot_driver_unregister)
+ 
+ #endif /* __COREBOOT_TABLE_H */
+diff --git a/drivers/firmware/smm/Kconfig b/drivers/firmware/smm/Kconfig
+new file mode 100644
+index 000000000000..3ff3691c2d27
+--- /dev/null
++++ b/drivers/firmware/smm/Kconfig
+@@ -0,0 +1,26 @@
++# SPDX-License-Identifier: GPL-2.0
++
++if GOOGLE_FIRMWARE && GOOGLE_COREBOOT_TABLE
++
++menuconfig SMM_DRIVER
++	bool "SMM from Linux (LinuxBootSMM)"
++	default n
++	help
++	  Enables support for System Management Mode (SMM) handling by Linux.
++	  coreboot reserves region for payload-owned SMI handler, shares this
++	  information with the payload using coreboot tables, and leaves SMRAM
++	  closed (but unlocked). Payload (Linux) is responsible for unlocking SMRAM,
++	  installing handler in dedicated region and locking SMRAM.
++	  If in doubt, say N.
++if SMM_DRIVER
++
++config S3_SUPPORT_SMM
++	bool "Enable payload-bootloader communication on S3 resume"
++	depends on ARCH_SUSPEND_POSSIBLE && SUSPEND
++	default n
++	help
++	  If platform supports S3 resume, enables parser for S3 communication
++	  info shared in coreboot table.
++endif
++
++endif
+diff --git a/drivers/firmware/smm/Makefile b/drivers/firmware/smm/Makefile
+new file mode 100644
+index 000000000000..cd4261c5347c
+--- /dev/null
++++ b/drivers/firmware/smm/Makefile
+@@ -0,0 +1,4 @@
++# SPDX-License-Identifier: GPL-2.0
++obj-y += smram.o
++obj-y += mm_info.o 
++obj-$(CONFIG_S3_SUPPORT_SMM) += s3_comm.o
+diff --git a/drivers/firmware/smm/mm_info.c b/drivers/firmware/smm/mm_info.c
+new file mode 100644
+index 000000000000..09b4688e4d6a
+--- /dev/null
++++ b/drivers/firmware/smm/mm_info.c
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * smram.c
++ *
++ * Driver for exporting SMRAM information from coreboot table.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++
++#include "../google/coreboot_table.h"
++#include "smm.h"
++
++static struct lb_pld_mm_interface_info *mm_cbtable_info;
++struct mm_info *mm_info;
++
++static int mm_driver_probe(struct coreboot_device *dev)
++{
++	mm_cbtable_info = &dev->mm_info;
++	if (mm_cbtable_info->tag != CB_TAG_PLD_MM_INTERFACE_INFO)
++		return -ENXIO;
++
++	mm_info = kmalloc(sizeof(*mm_info), GFP_KERNEL);
++	mm_info->revision = mm_cbtable_info->revision;
++	mm_info->requires_long_mode_call =
++		mm_cbtable_info->requires_long_mode_call;
++	mm_info->register_mm_entry_swsmi =
++		mm_cbtable_info->register_mm_entry_swsmi;
++	return 0;
++}
++EXPORT_SYMBOL(mm_info);
++
++static void mm_driver_remove(struct coreboot_device *dev)
++{
++	kfree(mm_info);
++}
++
++static const struct coreboot_device_id mm_info_ids[] = {
++	{ .tag = CB_TAG_PLD_MM_INTERFACE_INFO },
++	{ /* sentinel */ }
++};
++
++MODULE_DEVICE_TABLE(coreboot, mm_info_ids);
++
++static struct coreboot_driver mm_driver = {
++	.probe = mm_driver_probe,
++	.remove = mm_driver_remove,
++	.drv = {
++		.name = "mm_info",
++	},
++	.id_table = mm_info_ids,
++};
++
++module_coreboot_driver(mm_driver);
++
++MODULE_AUTHOR("Michal Gorlas <michal.gorlas@9elements.com>");
++MODULE_DESCRIPTION("Driver for exporting MM info from coreboot table");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/firmware/smm/s3_comm.c b/drivers/firmware/smm/s3_comm.c
+new file mode 100644
+index 000000000000..ae8bb56ccf29
+--- /dev/null
++++ b/drivers/firmware/smm/s3_comm.c
+@@ -0,0 +1,68 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * s3_comm.c
++ *
++ * Driver for exporting SMM-specific register information from coreboot table to sysfs.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++
++#include "../google/coreboot_table.h"
++#include "smm.h"
++
++static struct lb_pld_s3_communication *s3_cbtable_info;
++struct s3_comm_info *s3_info;
++
++static int s3_communications_driver_probe(struct coreboot_device *dev)
++{
++	s3_cbtable_info = &dev->s3_comm;
++	if (s3_cbtable_info->tag != CB_TAG_PLD_S3_COMMUNICATION)
++		return -ENXIO;
++
++	s3_info = kmalloc(sizeof(*s3_comm_info), GFP_KERNEL);
++	s3_info->physical_start =
++		unpack_cbuint64(s3_cbtable_info->comm_buffer.physical_start);
++	s3_info->pld_acpi_s3_enable = s3_cbtable_info->pld_acpi_s3_enable;
++	s3_info->physical_size =
++		unpack_cbuint64(s3_cbtable_info->comm_buffer.physical_size);
++	s3_info->region_state =
++		unpack_cbuint64(s3_cbtable_info->comm_buffer.region_state);
++
++	return 0;
++}
++EXPORT_SYMBOL(s3_info);
++
++static void s3_communications_driver_remove(struct coreboot_device *dev)
++{
++	kfree(s3_info);
++}
++
++static const struct coreboot_device_id s3_info_ids[] = {
++	{ .tag = CB_TAG_PLD_S3_COMMUNICATION },
++	{ /* sentinel */ }
++};
++
++MODULE_DEVICE_TABLE(coreboot, s3_info_ids);
++
++static struct coreboot_driver s3_comm_driver = {
++	.probe = s3_communications_driver_probe,
++	.remove = s3_communications_driver_remove,
++	.drv = {
++		.name = "s3_comm",
++	},
++	.id_table = s3_info_ids,
++};
++
++module_coreboot_driver(s3_comm_driver);
++
++MODULE_AUTHOR("Michal Gorlas <michal.gorlas@9elements.com>");
++MODULE_DESCRIPTION(
++	"Driver for exporting S3 communication information from the coreboot table");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/firmware/smm/smm.h b/drivers/firmware/smm/smm.h
+new file mode 100644
+index 000000000000..186d3097add7
+--- /dev/null
++++ b/drivers/firmware/smm/smm.h
+@@ -0,0 +1,65 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * smm.h
++ *
++ * Internal header for SMM driver.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#ifndef __SMM_H
++#define __SMM_H
++
++#define PAYLOAD_MM_RET_SUCCESS 0
++#define PAYLOAD_MM_RET_FAILURE 1
++#define PAYLOAD_MM_UNLOCK_SMRAM 1
++#define PAYLOAD_MM_REGISTER_ENTRY 2
++#define PAYLOAD_MM_LOCK_SMRAM 3
++
++extern u64 lshift(u64 opr, uint count);
++extern u64 unpack_cbuint64(struct cbuint64 inp);
++
++struct generic_register {
++	u8 register_id;
++	u8 address_space_id;
++	u8 register_bit_width;
++	u8 register_bit_offset;
++	u32 value;
++	u64 address;
++};
++
++struct smram_descriptor {
++	u64 physical_start;
++	u64 physical_size;
++	u64 cpu_start;
++	u64 region_state;
++};
++
++struct smram_info {
++	u32 nr_of_smm_regions;
++	struct smram_descriptor descriptor[];
++};
++
++struct s3_comm_info {
++	u64 physical_start;
++	u64 physical_size;
++	u64 region_state;
++	u8 pld_acpi_s3_enable;
++};
++
++struct mm_info {
++	u8 revision;
++	u8 requires_long_mode_call;
++	u8 register_mm_entry_swsmi;
++};
++
++struct smm_data {
++	u32 nr_of_smm_regions;
++	struct smram_descriptor region[1];
++	struct s3_comm_info s3_info;
++	struct mm_info mm_info;
++	int cpu_count;
++};
++
++#endif
+diff --git a/drivers/firmware/smm/smram.c b/drivers/firmware/smm/smram.c
+new file mode 100644
+index 000000000000..2e95061f50a1
+--- /dev/null
++++ b/drivers/firmware/smm/smram.c
+@@ -0,0 +1,93 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * smram.c
++ *
++ * Driver for exporting SMRAM information from coreboot table.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++
++#include "../google/coreboot_table.h"
++#include "smm.h"
++
++static struct lb_pld_smram_descriptor_block *smram_cbtable_info;
++struct smram_info *smram;
++
++u64 lshift(u64 opr, uint count)
++{
++	WARN_ON(count > 63);
++	return opr << count;
++}
++EXPORT_SYMBOL(lshift);
++
++u64 unpack_cbuint64(struct cbuint64 inp)
++{
++	return lshift(inp.hi, 32) | inp.lo;
++}
++EXPORT_SYMBOL(unpack_cbuint64);
++
++static int smram_driver_probe(struct coreboot_device *dev)
++{
++	smram_cbtable_info = &dev->smram_info;
++	if (smram_cbtable_info->tag != CB_TAG_PLD_SMM_SMRAM)
++		return -ENXIO;
++
++	smram = kmalloc(sizeof(struct smram_info) +
++			sizeof(struct smram_descriptor) *
++				(smram_cbtable_info->number_of_smm_regions - 1),
++		GFP_KERNEL);
++	smram->nr_of_smm_regions = smram_cbtable_info->number_of_smm_regions;
++	// Check whether the number of regions is present, if not, no need to iterate and likely
++	// the informations are missing in the cbtable.
++	if (smram->nr_of_smm_regions == 0) {
++		kfree(smram);
++		return -ENXIO;
++	}
++
++	for (int i = 0; i < smram->nr_of_smm_regions; i++) {
++		smram->descriptor[i].physical_start = unpack_cbuint64(
++			smram_cbtable_info->descriptor[i].physical_start);
++		smram->descriptor[i].cpu_start = unpack_cbuint64(
++			smram_cbtable_info->descriptor[i].physical_start);
++		smram->descriptor[i].physical_size = unpack_cbuint64(
++			smram_cbtable_info->descriptor[i].physical_size);
++		smram->descriptor[i].region_state = unpack_cbuint64(
++			smram_cbtable_info->descriptor[i].region_state);
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL(smram);
++
++static void smram_driver_remove(struct coreboot_device *dev)
++{
++	kfree(smram);
++}
++
++static const struct coreboot_device_id smm_info_ids[] = {
++	{ .tag = CB_TAG_PLD_SMM_SMRAM },
++	{ /* sentinel */ }
++};
++
++MODULE_DEVICE_TABLE(coreboot, smm_info_ids);
++
++static struct coreboot_driver smram_driver = {
++	.probe = smram_driver_probe,
++	.remove = smram_driver_remove,
++	.drv = {
++		.name = "smram",
++	},
++	.id_table = smm_info_ids,
++};
++
++module_coreboot_driver(smram_driver);
++
++MODULE_AUTHOR("Michal Gorlas <michal.gorlas@9elements.com>");
++MODULE_DESCRIPTION(
++	"Driver for exporting SMRAM information from the coreboot table");
++MODULE_LICENSE("GPL v2");
+-- 
+2.48.1
+

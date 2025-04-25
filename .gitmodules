@@ -5,6 +5,3 @@
 	path = linux
 	url = https://github.com/micgor32/linux.git
 
-[submodule "poc/source"]
-	path = poc/source
-	url = git@github.com:micgor32/linux.git
