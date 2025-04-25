@@ -1,53 +1,66 @@
-From 3aa8c9f8e6cd39852fd5773ab25878f6099c5f84 Mon Sep 17 00:00:00 2001
+From 559a5380029214e5f52d3c9e19f1f15c77f9dab3 Mon Sep 17 00:00:00 2001
 From: Michal Gorlas <michal.gorlas@9elements.com>
-Date: Fri, 25 Apr 2025 21:09:36 +0200
-Subject: [PATCH] [PATCH 0/3] drivers/firmware/smm: parsing SMM related
+Date: Fri, 25 Apr 2025 23:07:06 +0200
+Subject: [PATCH] [PATCH 0/3] drivers/firmware/google: parsing SMM related
  informations from coreboot table
 
 place holder for now
 
 Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
 ---
- drivers/firmware/Kconfig                 |  1 +
- drivers/firmware/Makefile                |  1 +
+ drivers/firmware/google/Kconfig          | 18 +++++
+ drivers/firmware/google/Makefile         |  5 ++
  drivers/firmware/google/coreboot_table.h | 69 +++++++++++++++---
- drivers/firmware/smm/Kconfig             | 26 +++++++
- drivers/firmware/smm/Makefile            |  4 +
- drivers/firmware/smm/mm_info.c           | 62 ++++++++++++++++
- drivers/firmware/smm/s3_comm.c           | 66 +++++++++++++++++
- drivers/firmware/smm/smm.h               | 65 +++++++++++++++++
- drivers/firmware/smm/smram.c             | 93 ++++++++++++++++++++++++
- 9 files changed, 375 insertions(+), 12 deletions(-)
- create mode 100644 drivers/firmware/smm/Kconfig
- create mode 100644 drivers/firmware/smm/Makefile
- create mode 100644 drivers/firmware/smm/mm_info.c
- create mode 100644 drivers/firmware/smm/s3_comm.c
- create mode 100644 drivers/firmware/smm/smm.h
- create mode 100644 drivers/firmware/smm/smram.c
+ drivers/firmware/google/mm_info.c        | 62 ++++++++++++++++
+ drivers/firmware/google/s3_comm.c        | 66 +++++++++++++++++
+ drivers/firmware/google/smm.h            | 65 +++++++++++++++++
+ drivers/firmware/google/smram.c          | 93 ++++++++++++++++++++++++
+ 7 files changed, 366 insertions(+), 12 deletions(-)
+ create mode 100644 drivers/firmware/google/mm_info.c
+ create mode 100644 drivers/firmware/google/s3_comm.c
+ create mode 100644 drivers/firmware/google/smm.h
+ create mode 100644 drivers/firmware/google/smram.c
 
-diff --git a/drivers/firmware/Kconfig b/drivers/firmware/Kconfig
-index aadc395ee168..32a973ae0081 100644
---- a/drivers/firmware/Kconfig
-+++ b/drivers/firmware/Kconfig
-@@ -280,6 +280,7 @@ source "drivers/firmware/psci/Kconfig"
- source "drivers/firmware/qcom/Kconfig"
- source "drivers/firmware/samsung/Kconfig"
- source "drivers/firmware/smccc/Kconfig"
-+source "drivers/firmware/smm/Kconfig"
- source "drivers/firmware/tegra/Kconfig"
- source "drivers/firmware/xilinx/Kconfig"
+diff --git a/drivers/firmware/google/Kconfig b/drivers/firmware/google/Kconfig
+index 41b78f5cb735..8a771d9fb2f4 100644
+--- a/drivers/firmware/google/Kconfig
++++ b/drivers/firmware/google/Kconfig
+@@ -81,4 +81,22 @@ config GOOGLE_VPD
+ 	  This option enables the kernel to expose the content of Google VPD
+ 	  under /sys/firmware/vpd.
  
-diff --git a/drivers/firmware/Makefile b/drivers/firmware/Makefile
-index 4ddec2820c96..3bbaceea0206 100644
---- a/drivers/firmware/Makefile
-+++ b/drivers/firmware/Makefile
-@@ -36,5 +36,6 @@ obj-y				+= psci/
- obj-y				+= qcom/
- obj-y				+= samsung/
- obj-y				+= smccc/
-+obj-$(CONFIG_SMM_DRIVER)	+= smm/
- obj-y				+= tegra/
- obj-y				+= xilinx/
++config SMM_DRIVER
++	tristate "SMM from Linux (LinuxBootSMM)"
++	depends on GOOGLE_COREBOOT_TABLE
++	help
++	  Enables support for System Management Mode (SMM) handling by Linux.
++	  coreboot reserves region for payload-owned SMI handler, shares this
++	  information with the payload using coreboot tables, and leaves SMRAM
++	  closed (but unlocked). Payload (Linux) is responsible for unlocking SMRAM,
++	  installing handler in dedicated region and locking SMRAM.
++	  If in doubt, say N.
++
++config S3_SUPPORT_SMM
++	tristate "Enable payload-bootloader communication on S3 resume"
++	depends on ARCH_SUSPEND_POSSIBLE && SUSPEND && SMM_DRIVER
++	help
++	  If platform supports S3 resume, enables parser for S3 communication
++	  info shared in coreboot table.
++
+ endif # GOOGLE_FIRMWARE
+diff --git a/drivers/firmware/google/Makefile b/drivers/firmware/google/Makefile
+index 8151e323cc43..7ea48ec883f3 100644
+--- a/drivers/firmware/google/Makefile
++++ b/drivers/firmware/google/Makefile
+@@ -12,3 +12,8 @@ obj-$(CONFIG_GOOGLE_CBMEM)		+= cbmem.o
+ 
+ vpd-sysfs-y := vpd.o vpd_decode.o
+ obj-$(CONFIG_GOOGLE_VPD)		+= vpd-sysfs.o
++
++# LinuxBootSMM related.
++obj-$(CONFIG_SMM_DRIVER)		+= smram.o
++obj-$(CONFIG_SMM_DRIVER)		+= mm_info.o
++obj-$(CONFIG_S3_SUPPORT_SMM)		+= s3_comm.o
 diff --git a/drivers/firmware/google/coreboot_table.h b/drivers/firmware/google/coreboot_table.h
 index bb6f0f7299b4..6ad9c2b60ea1 100644
 --- a/drivers/firmware/google/coreboot_table.h
@@ -170,53 +183,11 @@ index bb6f0f7299b4..6ad9c2b60ea1 100644
 +		      coreboot_driver_unregister)
  
  #endif /* __COREBOOT_TABLE_H */
-diff --git a/drivers/firmware/smm/Kconfig b/drivers/firmware/smm/Kconfig
+diff --git a/drivers/firmware/google/mm_info.c b/drivers/firmware/google/mm_info.c
 new file mode 100644
-index 000000000000..3ff3691c2d27
+index 000000000000..d871675e1a2d
 --- /dev/null
-+++ b/drivers/firmware/smm/Kconfig
-@@ -0,0 +1,26 @@
-+# SPDX-License-Identifier: GPL-2.0
-+
-+if GOOGLE_FIRMWARE && GOOGLE_COREBOOT_TABLE
-+
-+menuconfig SMM_DRIVER
-+	bool "SMM from Linux (LinuxBootSMM)"
-+	default n
-+	help
-+	  Enables support for System Management Mode (SMM) handling by Linux.
-+	  coreboot reserves region for payload-owned SMI handler, shares this
-+	  information with the payload using coreboot tables, and leaves SMRAM
-+	  closed (but unlocked). Payload (Linux) is responsible for unlocking SMRAM,
-+	  installing handler in dedicated region and locking SMRAM.
-+	  If in doubt, say N.
-+if SMM_DRIVER
-+
-+config S3_SUPPORT_SMM
-+	bool "Enable payload-bootloader communication on S3 resume"
-+	depends on ARCH_SUSPEND_POSSIBLE && SUSPEND
-+	default n
-+	help
-+	  If platform supports S3 resume, enables parser for S3 communication
-+	  info shared in coreboot table.
-+endif
-+
-+endif
-diff --git a/drivers/firmware/smm/Makefile b/drivers/firmware/smm/Makefile
-new file mode 100644
-index 000000000000..e14bca80ecd8
---- /dev/null
-+++ b/drivers/firmware/smm/Makefile
-@@ -0,0 +1,4 @@
-+# SPDX-License-Identifier: GPL-2.0
-+obj-y += smram.o
-+obj-y += mm_info.o
-+obj-$(CONFIG_S3_SUPPORT_SMM) += s3_comm.o
-diff --git a/drivers/firmware/smm/mm_info.c b/drivers/firmware/smm/mm_info.c
-new file mode 100644
-index 000000000000..09b4688e4d6a
---- /dev/null
-+++ b/drivers/firmware/smm/mm_info.c
++++ b/drivers/firmware/google/mm_info.c
 @@ -0,0 +1,62 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
@@ -232,7 +203,7 @@ index 000000000000..09b4688e4d6a
 +#include <linux/module.h>
 +#include <linux/slab.h>
 +
-+#include "../google/coreboot_table.h"
++#include "coreboot_table.h"
 +#include "smm.h"
 +
 +static struct lb_pld_mm_interface_info *mm_cbtable_info;
@@ -280,11 +251,11 @@ index 000000000000..09b4688e4d6a
 +MODULE_AUTHOR("Michal Gorlas <michal.gorlas@9elements.com>");
 +MODULE_DESCRIPTION("Driver for exporting MM info from coreboot table");
 +MODULE_LICENSE("GPL v2");
-diff --git a/drivers/firmware/smm/s3_comm.c b/drivers/firmware/smm/s3_comm.c
+diff --git a/drivers/firmware/google/s3_comm.c b/drivers/firmware/google/s3_comm.c
 new file mode 100644
-index 000000000000..1b17aefe7432
+index 000000000000..19dbf18232bb
 --- /dev/null
-+++ b/drivers/firmware/smm/s3_comm.c
++++ b/drivers/firmware/google/s3_comm.c
 @@ -0,0 +1,66 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
@@ -300,7 +271,7 @@ index 000000000000..1b17aefe7432
 +#include <linux/module.h>
 +#include <linux/slab.h>
 +
-+#include "../google/coreboot_table.h"
++#include "coreboot_table.h"
 +#include "smm.h"
 +
 +static struct lb_pld_s3_communication *s3_cbtable_info;
@@ -352,11 +323,11 @@ index 000000000000..1b17aefe7432
 +MODULE_DESCRIPTION(
 +	"Driver for exporting S3 communication information from the coreboot table");
 +MODULE_LICENSE("GPL v2");
-diff --git a/drivers/firmware/smm/smm.h b/drivers/firmware/smm/smm.h
+diff --git a/drivers/firmware/google/smm.h b/drivers/firmware/google/smm.h
 new file mode 100644
 index 000000000000..3f0f63baefa0
 --- /dev/null
-+++ b/drivers/firmware/smm/smm.h
++++ b/drivers/firmware/google/smm.h
 @@ -0,0 +1,65 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
@@ -423,11 +394,11 @@ index 000000000000..3f0f63baefa0
 +};
 +
 +#endif
-diff --git a/drivers/firmware/smm/smram.c b/drivers/firmware/smm/smram.c
+diff --git a/drivers/firmware/google/smram.c b/drivers/firmware/google/smram.c
 new file mode 100644
-index 000000000000..2e95061f50a1
+index 000000000000..7311b3c1fb1c
 --- /dev/null
-+++ b/drivers/firmware/smm/smram.c
++++ b/drivers/firmware/google/smram.c
 @@ -0,0 +1,93 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
@@ -443,7 +414,7 @@ index 000000000000..2e95061f50a1
 +#include <linux/module.h>
 +#include <linux/slab.h>
 +
-+#include "../google/coreboot_table.h"
++#include "coreboot_table.h"
 +#include "smm.h"
 +
 +static struct lb_pld_smram_descriptor_block *smram_cbtable_info;
@@ -468,7 +439,7 @@ index 000000000000..2e95061f50a1
 +	if (smram_cbtable_info->tag != CB_TAG_PLD_SMM_SMRAM)
 +		return -ENXIO;
 +
-+	smram = kmalloc(sizeof(struct smram_info) +
++	smram = kmalloc(sizeof(*smram) +
 +			sizeof(struct smram_descriptor) *
 +				(smram_cbtable_info->number_of_smm_regions - 1),
 +		GFP_KERNEL);
