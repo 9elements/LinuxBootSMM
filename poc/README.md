@@ -6,4 +6,19 @@ Relevant paths are:
 
 The patches [subdirectory](patches/) contains the ready to be applied patch on upstream Linux kernel.
 
-## TODO
+## Current state
+The driver is able to perform post-boot (that is after ramstage ends and payload stage starts) SMRAM unlocking, install
+Linux-owned code in SMRAM, and lock SMRAM again before any additional SMIs start to arrive. For the design flow, please see
+main [README](../README.md).
+
+## Limitations and TODO
+ - Write the Linux-owned code to dedicated region - for now it is written to the default SMBASE + offset
+  (0x38000), effectively overwritting coreboot's relocation code. This practice is not bad assuming we are 
+  not on S3 path - in this case coreboot will still expect the Linux-owned code to be under 0x38000, but 
+  it will be overwritten by the relocation code.
+
+ - The "trampoline" code is not doing anything apart from acknowledging its existence in SMM and returning
+ to the coreboot's SMI handler. The next step is to implement (in similar fashion to the Linux realmode trampoline)
+ the code that preserves the registers (in whatever their status was in coreboot SMI handler), brings us up to the
+ kernel space, and first then returns to the coreboot's SMI handler. This will allow to benefit from kernel memory 
+ protection, and will give more freedom for implementing more features from the kernel space.
