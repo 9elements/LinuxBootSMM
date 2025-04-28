@@ -333,7 +333,7 @@ When on S3 track the idea is again similar to the EDK2 implementation: coreboot 
 ## Proof of Concept
 For the instructions on the usage, please refer to LinuxBootSMM-builder's [README](https://github.com/micgor32/linuxbootsmm-builder/blob/master/README.md).
 
-The source files for the initial PoC, together with the list of the not current issues may be found [here]().
+The source files for the initial PoC, together with the list of the current status and issues may be found [here](poc/).
 
 ## References
 <a id="1">[1]</a> [Intel® 64 and IA-32 Architectures Software Developer Manuals, Volume 3C, Ch. 33](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) \
