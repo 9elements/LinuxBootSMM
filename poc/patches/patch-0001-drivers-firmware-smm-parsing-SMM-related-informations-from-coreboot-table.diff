@@ -261,7 +261,7 @@ index 000000000000..19dbf18232bb
 +/*
 + * s3_comm.c
 + *
-+ * Driver for exporting SMM-specific register information from coreboot table to sysfs.
++ * Driver for exporting SMM S3 communications information from the coreboot table.
 + *
 + * Copyright 2025 9elements gmbh
 + * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>

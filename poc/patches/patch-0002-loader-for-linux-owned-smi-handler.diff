@@ -1,6 +1,6 @@
-From b43ae0f41b7338a7ff7b7e032304e0482aaac955 Mon Sep 17 00:00:00 2001
+From 161a6ea00374243fbacd3421130a6592522c4d8e Mon Sep 17 00:00:00 2001
 From: Michal Gorlas <michal.gorlas@9elements.com>
-Date: Mon, 28 Apr 2025 15:34:02 +0200
+Date: Tue, 29 Apr 2025 18:31:37 +0200
 Subject: [PATCH] [PATCH 1/3] loader for Linux-owned SMI handler
 
 placeholder for now
@@ -12,11 +12,11 @@ Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
  arch/x86/realmode/init.c             |  56 ++++--
  arch/x86/realmode/rm/Makefile        |   1 +
  arch/x86/realmode/rm/header.S        |   8 +-
- arch/x86/realmode/rm/mm_trampoline.S | 242 ++++++++++++++++++++++++++
+ arch/x86/realmode/rm/mm_trampoline.S | 242 ++++++++++++++++++++++++
  drivers/firmware/google/Makefile     |   1 +
- drivers/firmware/google/mm_loader.c  | 247 +++++++++++++++++++++++++++
- drivers/firmware/google/smm.h        |   7 +
- 9 files changed, 585 insertions(+), 15 deletions(-)
+ drivers/firmware/google/mm_loader.c  | 265 +++++++++++++++++++++++++++
+ drivers/firmware/google/smm.h        |  11 +-
+ 9 files changed, 605 insertions(+), 17 deletions(-)
  create mode 100644 arch/x86/realmode/rm/mm_trampoline.S
  create mode 100644 drivers/firmware/google/mm_loader.c
 
@@ -315,7 +315,7 @@ index 2eb62be6d256..683e91f2bfae 100644
  #endif
 diff --git a/arch/x86/realmode/rm/mm_trampoline.S b/arch/x86/realmode/rm/mm_trampoline.S
 new file mode 100644
-index 000000000000..7c44314b20f2
+index 000000000000..258065222ca2
 --- /dev/null
 +++ b/arch/x86/realmode/rm/mm_trampoline.S
 @@ -0,0 +1,242 @@
@@ -572,10 +572,10 @@ index 7ea48ec883f3..0a018f9c32f5 100644
 +obj-$(CONFIG_SMM_DRIVER)		+= mm_loader.o
 diff --git a/drivers/firmware/google/mm_loader.c b/drivers/firmware/google/mm_loader.c
 new file mode 100644
-index 000000000000..7007a4d604bc
+index 000000000000..f9167d0469b3
 --- /dev/null
 +++ b/drivers/firmware/google/mm_loader.c
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,265 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Driver for installing Linux-owned SMI handler
@@ -596,17 +596,12 @@ index 000000000000..7007a4d604bc
 +
 +#define DRIVER_NAME "mm_loader"
 +
-+/*extern struct mm_info *mm_info;*/
-+/*extern struct smram_info *smram;*/
-+/*#ifdef CONFIG_S3_SUPPORT_SMM*/
-+/*extern struct s3_comm_info *s3_info;*/
-+/*#endif*/
-+
 +/* Getter for CBTABLE entries exposed by dedicated parsers.
 + * Should also free the memory allocated for the exposed structs.
 + */
++static struct smm_data *cb_data;
 +
-+static struct smm_data get_cb_data(void)
++static void get_cb_data(void)
 +{
 +	WARN_ON(!mm_info || !smram);
 +#ifdef CONFIG_S3_SUPPORT
@@ -616,21 +611,25 @@ index 000000000000..7007a4d604bc
 +
 +	cpu_count = num_possible_cpus();
 +
-+	struct smm_data ret = { .mm_info = *mm_info,
-+				.nr_of_smm_regions = smram->nr_of_smm_regions,
-+				.cpu_count = cpu_count,
-+#ifdef CONFIG_S3_SUPPORT
-+				.s3_info = *s3_info
-+#endif
-+	};
++	cb_data = kmalloc(sizeof(*cb_data) +
++			  sizeof(struct smram_descriptor) *
++				  (smram->nr_of_smm_regions - 1),
++		  GFP_KERNEL);
 +
-+	for (int i = 0; i < ret.nr_of_smm_regions; i++) {
-+		ret.region[i].physical_start =
++	cb_data->mm_info = *mm_info;
++	cb_data->nr_of_smm_regions = smram->nr_of_smm_regions;
++	cb_data->cpu_count = cpu_count;
++#ifdef CONFIG_S3_SUPPORT
++	cb_data->s3_info = *s3_info;
++#endif
++
++	for (int i = 0; i < cb_data->nr_of_smm_regions; i++) {
++		cb_data->region[i].physical_start =
 +			smram->descriptor[i].physical_start;
-+		ret.region[i].cpu_start = smram->descriptor[i].cpu_start;
-+		ret.region[i].physical_size =
++		cb_data->region[i].cpu_start = smram->descriptor[i].cpu_start;
++		cb_data->region[i].physical_size =
 +			smram->descriptor[i].physical_size;
-+		ret.region[i].region_state = smram->descriptor[i].region_state;
++		cb_data->region[i].region_state = smram->descriptor[i].region_state;
 +	}
 +
 +	// just so that the parser devices can be unmounted
@@ -639,8 +638,6 @@ index 000000000000..7007a4d604bc
 +#ifdef CONFIG_S3_SUPPORT
 +	kfree(s3_info);
 +#endif
-+
-+	return ret;
 +}
 +
 +static int trigger_smi(u64 cmd, u64 arg, u64 retry)
@@ -744,6 +741,10 @@ index 000000000000..7007a4d604bc
 +	return status;
 +}
 +
++/*
++ * This function is intended to be called from SMM
++ * once trampoline gets us to the kernel space.
++ */
 +static void notrace test(void *unused)
 +{
 +	pr_info("I am here\n");
@@ -751,31 +752,48 @@ index 000000000000..7007a4d604bc
 +
 +static int __init mm_loader_init(void)
 +{
-+	struct smm_data cb_data = get_cb_data();
++	get_cb_data();
 +	int status_unlock = 1;
 +	int status_reg = 1;
 +	int status_lock = 1;
-+
-+	is_for_smm = SMM_INIT_HANDLER;
-+	ending_code = (unsigned long)test;
-+	status_unlock = unlock_smram(&cb_data);
++	
++	status_unlock = unlock_smram(cb_data);
 +
 +	mdelay(100);
 +	printk(KERN_DEBUG "status is %d\n", status_unlock);
 +
 +	/*
-+	 * For now let the location be default SMBASE - this is not desired place,
-+	 * but it is safe for now (till we have the address of the region translated properly),
-+	 * we overwrite the stub code that is used for relocation only anyways.
-+	 */
-+	const uintptr_t location = 0x38000;
-+
-+	/*
 +	 * Size is hardcoded to 3000: real_mode_blob without mm_trampoline.S is 6000, and
 +	 * with is 9000, therefore since we want all instructions that are coming after
 +	 * pa_mm_startup_32, we copy the real_mode_blob - mm_trampoline.S.
++	 * FIXME: we can reserve from tseg_payload_base + cb_data->region[1].physical_size.
++	 *
++	 * Now within SMM we have the following regions available (see cpu/x86/smm/tseg_region.c
++	 * in coreboot source tree):
++	 *
++	 *     +-------------------------+
++	 *     |          IED            | IED_REGION_SIZE
++	 *     +-------------------------+
++	 *     |  External Stage Cache   | SMM_RESERVED_SIZE
++	 *     +-------------------------+
++	 *     |      code and data      |
++	 *     |         (TSEG)          |
++	 *     +-------------------------+
++	 *     | (optional payload area) |
++	 *     |			 |
++	 *     +-------------------------+
++	 *     |	EFI reserved	 |
++	 *     |   (fixed to 1000 bytes) |
++	 *     +-------------------------+ TSEG
++	 *
++	 * Payload starts at the base of TSEG, this is platform dependent, and hence coreboot
++	 * has to provide this information via CBTABLE. Now, the payload region is divided into
++	 * two subregions: first is dedicated to EFI communications (EDK2 specific not implemented here),
++	 * the second one (which we are claiming below) is supposed to hold all setup code we need to 
++	 * get to the kernel space in SMM.
 +	 */
-+	void __iomem *addr = ioremap((resource_size_t)location, 3000);
++	u32 tseg_payload_base = (u32)cb_data->region[1].physical_start;
++	void __iomem *tseg_v = ioremap(tseg_payload_base, 3000);
 +
 +	/*
 +	 * There are two things we have to do before telling coreboot where the handler is:
@@ -790,20 +808,20 @@ index 000000000000..7007a4d604bc
 +	/*
 +	 * Depending on bitness of coreboot, we copy different entry code to SMRAM
 +	 */
-+	if (!cb_data.mm_info.requires_long_mode_call)
-+		memcpy_toio(addr, __va(real_mode_header->mm_trampoline_start64),
++	if (!cb_data->mm_info.requires_long_mode_call)
++		memcpy_toio(tseg_v, __va(real_mode_header->mm_trampoline_start64),
 +			    3000);
 +	else
-+		memcpy_toio(addr, __va(real_mode_header->mm_startup_32), 3000);
++		memcpy_toio(tseg_v, __va(real_mode_header->mm_startup_32), 3000);
 +
 +	wbinvd();
 +
-+	status_reg = register_entry_point(&cb_data, location);
++	status_reg = register_entry_point(cb_data, tseg_payload_base);
 +
 +	mdelay(100);
 +	printk(KERN_DEBUG "status is %d\n", status_reg);
 +
-+	status_lock = lock_smram(&cb_data);
++	status_lock = lock_smram(cb_data);
 +
 +	mdelay(100);
 +	printk(KERN_DEBUG "status is %d\n", status_lock);
@@ -813,7 +831,7 @@ index 000000000000..7007a4d604bc
 +
 +static void __exit mm_loader_exit(void)
 +{
-+	// Nothing to be cleaned here.
++	kfree(cb_data);
 +	printk(KERN_DEBUG "DONE");
 +}
 +
@@ -824,7 +842,7 @@ index 000000000000..7007a4d604bc
 +MODULE_DESCRIPTION("MM loader - installs Linux-owned SMI handler");
 +MODULE_LICENSE("GPL v2");
 diff --git a/drivers/firmware/google/smm.h b/drivers/firmware/google/smm.h
-index 3f0f63baefa0..5e5527e17a7a 100644
+index 3f0f63baefa0..da8de9facad6 100644
 --- a/drivers/firmware/google/smm.h
 +++ b/drivers/firmware/google/smm.h
 @@ -11,6 +11,8 @@
@@ -848,6 +866,19 @@ index 3f0f63baefa0..5e5527e17a7a 100644
  
  struct generic_register {
  	u8 register_id;
+@@ -56,10 +63,10 @@ struct mm_info {
+ 
+ struct smm_data {
+ 	u32 nr_of_smm_regions;
+-	struct smram_descriptor region[1];
+ 	struct s3_comm_info s3_info;
+ 	struct mm_info mm_info;
+ 	int cpu_count;
++	struct smram_descriptor region[];
+ };
+ 
+-#endif
++#endif /* __SMM_H */
 -- 
 2.49.0
 
