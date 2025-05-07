@@ -12,11 +12,6 @@ Linux-owned code in SMRAM, and lock SMRAM again before any additional SMIs start
 main [README](../README.md).
 
 ## Limitations and TODO
- - Write the Linux-owned code to dedicated region - for now it is written to the default SMBASE + offset
-  (0x38000), effectively overwritting coreboot's relocation code. This practice is not bad assuming we are 
-  not on S3 path - in this case coreboot will still expect the Linux-owned code to be under 0x38000, but 
-  it will be overwritten by the relocation code.
-
  - The "trampoline" code is not doing anything apart from acknowledging its existence in SMM and returning
  to the coreboot's SMI handler. The next step is to implement (in similar fashion to the Linux realmode trampoline)
  the code that preserves the registers (in whatever their status was in coreboot SMI handler), brings us up to the
