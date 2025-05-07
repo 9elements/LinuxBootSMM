@@ -1,6 +1,6 @@
-From 161a6ea00374243fbacd3421130a6592522c4d8e Mon Sep 17 00:00:00 2001
+From 21056fbcc04128a871ebf4c76928c261a7df2070 Mon Sep 17 00:00:00 2001
 From: Michal Gorlas <michal.gorlas@9elements.com>
-Date: Tue, 29 Apr 2025 18:31:37 +0200
+Date: Wed, 7 May 2025 20:57:13 +0200
 Subject: [PATCH] [PATCH 1/3] loader for Linux-owned SMI handler
 
 placeholder for now
@@ -12,11 +12,11 @@ Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
  arch/x86/realmode/init.c             |  56 ++++--
  arch/x86/realmode/rm/Makefile        |   1 +
  arch/x86/realmode/rm/header.S        |   8 +-
- arch/x86/realmode/rm/mm_trampoline.S | 242 ++++++++++++++++++++++++
+ arch/x86/realmode/rm/mm_trampoline.S | 242 +++++++++++++++++++++++
  drivers/firmware/google/Makefile     |   1 +
- drivers/firmware/google/mm_loader.c  | 265 +++++++++++++++++++++++++++
+ drivers/firmware/google/mm_loader.c  | 279 +++++++++++++++++++++++++++
  drivers/firmware/google/smm.h        |  11 +-
- 9 files changed, 605 insertions(+), 17 deletions(-)
+ 9 files changed, 619 insertions(+), 17 deletions(-)
  create mode 100644 arch/x86/realmode/rm/mm_trampoline.S
  create mode 100644 drivers/firmware/google/mm_loader.c
 
@@ -572,10 +572,10 @@ index 7ea48ec883f3..0a018f9c32f5 100644
 +obj-$(CONFIG_SMM_DRIVER)		+= mm_loader.o
 diff --git a/drivers/firmware/google/mm_loader.c b/drivers/firmware/google/mm_loader.c
 new file mode 100644
-index 000000000000..f9167d0469b3
+index 000000000000..763445ee28ff
 --- /dev/null
 +++ b/drivers/firmware/google/mm_loader.c
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,279 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Driver for installing Linux-owned SMI handler
@@ -691,10 +691,9 @@ index 000000000000..f9167d0469b3
 +		     : "%rax", "%rbx", "%rdx", "%rcx", "%r8");
 +
 +	// For debugging - it is useful to know what exact value was written to RAX by SMI handler.
-+	printk(KERN_DEBUG "%s: SMI returned 0x%llx\n", __func__,
-+	       ((status >> 8) & 0xff));
++	printk(KERN_INFO "%s: SMI returned 0x%016llx\n", __func__, status);//((status >> 8) & 0xff));
 +
-+	if (status == cmd)
++	if (status == cmd || ((status>>8) & 0xff))
 +		status = PAYLOAD_MM_RET_FAILURE;
 +	else
 +		status = PAYLOAD_MM_RET_SUCCESS;
@@ -750,18 +749,7 @@ index 000000000000..f9167d0469b3
 +	pr_info("I am here\n");
 +}
 +
-+static int __init mm_loader_init(void)
-+{
-+	get_cb_data();
-+	int status_unlock = 1;
-+	int status_reg = 1;
-+	int status_lock = 1;
-+	
-+	status_unlock = unlock_smram(cb_data);
-+
-+	mdelay(100);
-+	printk(KERN_DEBUG "status is %d\n", status_unlock);
-+
++static u32 place_handler(void) {
 +	/*
 +	 * Size is hardcoded to 3000: real_mode_blob without mm_trampoline.S is 6000, and
 +	 * with is 9000, therefore since we want all instructions that are coming after
@@ -792,7 +780,7 @@ index 000000000000..f9167d0469b3
 +	 * the second one (which we are claiming below) is supposed to hold all setup code we need to 
 +	 * get to the kernel space in SMM.
 +	 */
-+	u32 tseg_payload_base = (u32)cb_data->region[1].physical_start;
++	u32 tseg_payload_base = cb_data->region[1].physical_start;
 +	void __iomem *tseg_v = ioremap(tseg_payload_base, 3000);
 +
 +	/*
@@ -816,15 +804,41 @@ index 000000000000..f9167d0469b3
 +
 +	wbinvd();
 +
-+	status_reg = register_entry_point(cb_data, tseg_payload_base);
++	return tseg_payload_base;
++}
++
++static int __init mm_loader_init(void)
++{
++	u32 entry_point;
++
++	get_cb_data();
++
++	if (unlock_smram(cb_data))
++		return -1;
 +
 +	mdelay(100);
-+	printk(KERN_DEBUG "status is %d\n", status_reg);
 +
-+	status_lock = lock_smram(cb_data);
++	entry_point = place_handler();	
++	if(register_entry_point(cb_data, entry_point)) {
++		/*
++		 * This is already bad, but it can get worse if SMRAM is not locked.
++		 * It is safe to assume that at this point SMRAM is unlocked.
++		 * Hence one more SMI is send to lock down SMRAM in whatever its state
++		 * currently is.
++		 */
++		pr_warn(DRIVER_NAME ": registering entry point for MM payload failed. Locking SMRAM anyways!\n");
++		if(lock_smram(cb_data))
++			panic("SMRAM not locked!");
++
++		return -1;
++	}
 +
 +	mdelay(100);
-+	printk(KERN_DEBUG "status is %d\n", status_lock);
++
++	if(lock_smram(cb_data))
++		panic("SMRAM not locked!");
++
++	mdelay(100);
 +
 +	return 0;
 +}
