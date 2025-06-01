@@ -9,4 +9,4 @@ This repo contains the patches for Linux and coreboot needed to build PoC of Lin
 
 # Documentation
 For the detailed description of the research phase of the project, design explanation, discussion on PoC implementation and further developement plans,
-please refer to the [wiki page](https://github.com/9elements/LinuxBootSMM/wiki/) dedicated to this project.
+please refer to the [wiki page](https://github.com/9elements/LinuxBootSMM/wiki) dedicated to this project.
