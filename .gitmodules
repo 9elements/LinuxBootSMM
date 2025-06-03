@@ -1,6 +1,3 @@
-[submodule "linuxbootsmm-builder"]
-	path = linuxbootsmm-builder
-	url = https://github.com/micgor32/linuxbootsmm-builder
 [submodule "linux"]
 	path = linux
 	url = https://github.com/micgor32/linux.git
