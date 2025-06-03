@@ -1,0 +1,253 @@
+From 6dffed1aa53c32bcdcaed30226ce696bd50f5e86 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Tue, 3 Jun 2025 16:19:20 +0200
+Subject: [PATCH 6/7] drivers/payload_mm_interface: implement no-unlock MM
+ payload for LinuxBoot
+
+A modification of MM payload concept which allows to keep SMRAM locked as
+with normal boot. Payload is responsible for preparing its handler outside
+of SMRAM, and informing coreboot about from where should it copy the handler
+into SMRAM. This patch, however, only provides LinuxBoot integration of this
+concept.
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ src/drivers/payload_mm_interface/Kconfig |   2 +-
+ src/drivers/payload_mm_interface/smi.c   | 130 ++++++++++-------------
+ src/include/payload_mm_interface.h       |  26 ++++-
+ 3 files changed, 81 insertions(+), 77 deletions(-)
+
+diff --git a/src/drivers/payload_mm_interface/Kconfig b/src/drivers/payload_mm_interface/Kconfig
+index a738ae66fb..c29b59dcb1 100644
+--- a/src/drivers/payload_mm_interface/Kconfig
++++ b/src/drivers/payload_mm_interface/Kconfig
+@@ -4,7 +4,7 @@
+ # - Alternatively: Some Kconfig dependency statement?
+ config PAYLOAD_MM_INTERFACE
+ 	bool "Support for coreboot-mediated payload SMM"
+-	depends on (SOC_INTEL_COMMON || SOC_AMD_COMMON) && HAVE_SMI_HANDLER
++	depends on (SOC_INTEL_COMMON || SOC_AMD_COMMON || BOARD_EMULATION_QEMU_X86_Q35) && HAVE_SMI_HANDLER
+ 	select SOC_AMD_COMMON_SMM_KEY if SOC_AMD_COMMON
+ 	default n
+ 	help
+diff --git a/src/drivers/payload_mm_interface/smi.c b/src/drivers/payload_mm_interface/smi.c
+index 2a11478fcc..8dbcbbd3f7 100644
+--- a/src/drivers/payload_mm_interface/smi.c
++++ b/src/drivers/payload_mm_interface/smi.c
+@@ -6,113 +6,95 @@
+ #include <cpu/x86/smm.h>
+ #include <payload_mm_interface.h>
+ #include <types.h>
++#include <string.h>
+ 
+-static uint64_t cpu_savestate_sizes[CONFIG_MAX_CPUS] = { 0 };
++static uint32_t mm_entrypoint_address;
+ 
+-static struct EFI_MM_ENTRY_CONTEXT mm_entry_context = {
+-	.ReservedMmStartupThisAp = 0,		// Not supported yet
+-	.CurrentlyExecutingCpu = 0,		// FIXME
+-	.NumberOfCpus = CONFIG_MAX_CPUS,
+-	.CpuSaveStateSize = 0,			// Not supported at this time
+-	.CpuSaveState = 0,			// Not supported at this time
+-};
+-
+-static uint32_t payload_mm_get_entrypoint(void)
++static uint32_t payload_mm_get_entrypoint(uintptr_t region_base, size_t region_size)
+ {
+-	uintptr_t tseg_base;
+-	size_t tseg_size;
++	if (!region_base || !region_size)
++		return 0;
+ 
+-	payload_mm_get_reserved_region(&tseg_base, &tseg_size);
++	// TODO: avoid preprocessor, but make clear distinction between what Linux and EDK2 needs
++	if (CONFIG(PAYLOAD_LINUXBOOT)) {
++		struct mm_header *mm_header = (void *)region_base;
+ 
+-	struct PLD_MM_TO_BL_SMM_INFO *pld_mm_to_bl_smm_info = (void *)tseg_base;
+-	if (pld_mm_to_bl_smm_info->header_magic != PLD_MM_SHARED_STRUCT_MAGIC ||
+-	    pld_mm_to_bl_smm_info->header_size > PLD_MM_SHARED_STRUCT_MAX_SIZE)
+-		return 0;
++		if (mm_header->mm_signature != REALMODE_END_SIGNATURE) {
++			printk(BIOS_WARNING, "MM signature mismatch! Bootloader: %x, Payload: %x.\n",
++					REALMODE_END_SIGNATURE, mm_header->mm_signature);
++			return 0;
++		}
+ 
+-	// TODO: Further consider in which situations this is recoverable.
+-	if (pld_mm_to_bl_smm_info->header_size != sizeof(*pld_mm_to_bl_smm_info) ||
+-	    pld_mm_to_bl_smm_info->header_revision != PLD_MM_SHARED_STRUCT_REVISION)
+-		printk(BIOS_WARNING, "Version mismatch! Bootloader: %d; Payload %d\n",
+-		       PLD_MM_SHARED_STRUCT_REVISION, pld_mm_to_bl_smm_info->header_revision);
++		if (!ENV_X86_64)
++			return region_base + mm_header->mm_entry_32;
+ 
+-	if (pld_mm_to_bl_smm_info->mm_entrypoint_address < tseg_base ||
+-	    pld_mm_to_bl_smm_info->mm_entrypoint_address > (tseg_base + tseg_size)) {
+-		printk(BIOS_WARNING, "Payload set MM entrypoint outside of the reserved region!\n");
+-		return 0;
++		return region_base + mm_header->mm_entry_64;
++
++	} else if (CONFIG(PAYLOAD_EDK2)) {
++		// left out for now
+ 	}
+ 
+-	return pld_mm_to_bl_smm_info->mm_entrypoint_address;
++	return 0;
+ }
+ 
+-static uint8_t payload_mm_smram_locks(bool lock_smram)
++static uint8_t payload_mm_load(uintptr_t mm_address)
+ {
+-	enum cb_err status = CB_ERR;
+-
+-	if (lock_smram)
+-		status = post_boot_smram_lock();
+-	else if (!payload_mm_installed())
+-		status = post_boot_smram_unlock();
+-
+-	if (status == CB_SUCCESS) {
+-		printk(BIOS_DEBUG, "Payload MM successfully %s SMRAM.\n", lock_smram ? "locked" : "unlocked");
+-		return PAYLOAD_MM_RET_SUCCESS;
+-	} else {
+-		printk(BIOS_WARNING, "Payload MM failed to %s SMRAM.\n", lock_smram ? "lock" : "unlock");
++	if (mm_entrypoint_address != 0) {
++		printk(BIOS_WARNING, "Payload MM already registered at 0x%x!\n", mm_entrypoint_address);
+ 		return PAYLOAD_MM_RET_FAILURE;
+ 	}
+-}
+ 
+-#if 0
+-static uint8_t payload_mm_register_entry(uint32_t argument)
+-{
+-	if (mm_entrypoint_address) {
+-		printk(BIOS_WARNING, "Payload MM already registered at 0x%x!\n", mm_entrypoint_address);
++	uintptr_t payload_mm_region_base;
++	size_t payload_mm_region_size;
++
++	payload_mm_get_reserved_region(&payload_mm_region_base, &payload_mm_region_size);
++	struct mm_header *mm_header;
++
++	mm_header = (void *)mm_address;
++
++	if (mm_header->mm_signature != REALMODE_END_SIGNATURE) {
++			printk(BIOS_WARNING, "MM signature mismatch! Bootloader: %x, Payload: %x.\n",
++					REALMODE_END_SIGNATURE, mm_header->mm_signature);
++			return PAYLOAD_MM_RET_FAILURE;
++	}
++
++	if (mm_header->mm_blob_size > payload_mm_region_size) {
++		printk(BIOS_WARNING, "Payload wants to reserve more space that available!\n");
+ 		return PAYLOAD_MM_RET_FAILURE;
+ 	}
+ 
+-	mm_entrypoint_address = argument;
++	size_t payload_mm_blob_size = mm_header->mm_blob_size;
+ 
+-	printk(BIOS_DEBUG, "Payload MM registered entrypoint 0x%x\n", mm_entrypoint_address);
+-	return PAYLOAD_MM_RET_SUCCESS;
+-}
+-#endif
++	memcpy((void *)payload_mm_region_base, (void *)mm_address, payload_mm_blob_size);
++	printk(BIOS_DEBUG, "Payload MM loaded core module to 0x%lx.\n", payload_mm_region_base);
+ 
+-bool payload_mm_installed(void)
+-{
+-	return payload_mm_get_entrypoint() != 0;
++	mm_entrypoint_address = payload_mm_get_entrypoint(payload_mm_region_base, payload_mm_region_size);
++
++	if (!mm_entrypoint_address)
++		return PAYLOAD_MM_RET_FAILURE;
++
++	return PAYLOAD_MM_RET_SUCCESS;
+ }
+ 
+ uint8_t payload_mm_exec_interface(uint8_t sub_command, uint32_t argument)
+ {
+-	// NOTE: This could stand to behave itself better on S3 resume, but callees handle themselves okay.
+-	switch (sub_command) {
+-	/* TODO: Query command (secondary consumers)? Drop register command? */
+-#if 0
+-	case PAYLOAD_MM_REGISTER_ENTRY:
+-		return payload_mm_register_entry(argument);
+-#endif
+-	case PAYLOAD_MM_UNLOCK_SMRAM:
+-		return payload_mm_smram_locks(false);
+-	case PAYLOAD_MM_LOCK_SMRAM:
+-		return payload_mm_smram_locks(true);
++	if (sub_command == PAYLOAD_MM_REGISTER_ENTRY) {
++		return payload_mm_load(argument);
+ 	}
+ 
+ 	printk(BIOS_WARNING, "Unrecognised subcommand 0x%x!\n", sub_command);
+ 	return PAYLOAD_MM_RET_FAILURE;
+ }
+ 
+-void payload_mm_call_entrypoint(void)
++int payload_mm_call_entrypoint(struct lb_entry_context lb_entry_context)
+ {
+-	uint32_t mm_entrypoint_address = payload_mm_get_entrypoint();
+ 	if (!mm_entrypoint_address) {
+ 		printk(BIOS_WARNING, "Payload MM not yet registered.\n");
+-		return;
++		return PAYLOAD_MM_RET_FAILURE;
+ 	}
+ 
+-	mm_entry_context.CpuSaveStateSize = (uint64_t)(uintptr_t)cpu_savestate_sizes;
+-
+-	void (*mm_entrypoint)(struct EFI_MM_ENTRY_CONTEXT *arg) = (void *)(uintptr_t)mm_entrypoint_address;
+-	mm_entrypoint(&mm_entry_context);
+-
+-	printk(BIOS_DEBUG, "Payload MM returns\n");
++	void (*mm_entrypoint)(struct lb_entry_context) = (void *)(uintptr_t)mm_entrypoint_address;
++	mm_entrypoint(lb_entry_context);
++	printk(BIOS_DEBUG, "Payload MM called core module at %p\n", mm_entrypoint);
++	return PAYLOAD_MM_RET_SUCCESS;
+ }
+diff --git a/src/include/payload_mm_interface.h b/src/include/payload_mm_interface.h
+index 361042d3ef..09bab989e7 100644
+--- a/src/include/payload_mm_interface.h
++++ b/src/include/payload_mm_interface.h
+@@ -22,6 +22,29 @@ struct PLD_MM_TO_BL_SMM_INFO {
+ 	uint32_t  mm_entrypoint_address;
+ };
+ 
++#define REALMODE_END_SIGNATURE	0x65a22c82 /* lets reuse the signature for rm blob for now */
++
++struct mm_header {
++	u32	text_start;
++	u32	mm_entry_32;
++	u32	mm_entry_64;
++	u32 	mm_signature;
++	u32 	mm_blob_size;
++};
++
++/* Commands passed to the payload */
++#define PAYLOAD_MM_ACPI_ENABLE  	1
++#define PAYLOAD_MM_ACPI_DISABLE 	0
++#define PAYLOAD_MM_SMM_STORE 		2
++#define PAYLOAD_MM_ACK			5
++
++struct lb_entry_context {
++	uint16_t command;
++	uint32_t pm1_cnt;
++	uint16_t acpi_base;
++};
++
++
+ void payload_mm_get_reserved_region(uintptr_t *tseg_base, size_t *tseg_size);
+ 
+ void lb_payload_mm(struct lb_header *header);
+@@ -64,8 +87,7 @@ struct EFI_MM_ENTRY_CONTEXT {
+   uint64_t  CpuSaveState;
+ };
+ 
+-bool payload_mm_installed(void);
+ uint8_t payload_mm_exec_interface(uint8_t sub_command, uint32_t argument);
+-void payload_mm_call_entrypoint(void);
++int payload_mm_call_entrypoint(struct lb_entry_context context);
+ 
+ #endif
+-- 
+2.49.0
+

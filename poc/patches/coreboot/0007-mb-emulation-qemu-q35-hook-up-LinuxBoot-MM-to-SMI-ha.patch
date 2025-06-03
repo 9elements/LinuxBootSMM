@@ -1,0 +1,157 @@
+From 1dab8f65668ba4166d4951f86556cc4255395462 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Tue, 3 Jun 2025 17:15:58 +0200
+Subject: [PATCH 7/7] mb/emulation/qemu-q35: hook up LinuxBoot MM to SMI
+ handler
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ src/mainboard/emulation/qemu-q35/memmap.c     |  9 +--
+ src/mainboard/emulation/qemu-q35/smihandler.c | 65 +++++++++++++++++--
+ 2 files changed, 63 insertions(+), 11 deletions(-)
+
+diff --git a/src/mainboard/emulation/qemu-q35/memmap.c b/src/mainboard/emulation/qemu-q35/memmap.c
+index 3e8da5ca08..2af38bdc44 100644
+--- a/src/mainboard/emulation/qemu-q35/memmap.c
++++ b/src/mainboard/emulation/qemu-q35/memmap.c
+@@ -3,6 +3,7 @@
+ #define __SIMPLE_DEVICE__
+ 
+ #include <assert.h>
++#include <acpi/acpi.h>
+ #include <console/console.h>
+ #include <cpu/x86/smm.h>
+ #include <device/fw_cfg.h>
+@@ -56,7 +57,7 @@ static size_t decode_tseg_size(u8 esmramc)
+ 	}
+ }
+ 
+-void smm_region(uintptr_t *start, size_t *size)
++__weak void smm_region(uintptr_t *start, size_t *size)
+ {
+ 	uint8_t esmramc = pci_read_config8(HOST_BRIDGE, ESMRAMC);
+ 
+@@ -87,12 +88,6 @@ void smm_close(void)
+ 
+ void smm_lock(void)
+ {
+-	/*
+-	 * LOCK the SMM memory window and enable normal SMM.
+-	 * After running this function, only a full reset can
+-	 * make the SMM registers writable again.
+-	 */
+ 	printk(BIOS_DEBUG, "Locking SMM.\n");
+-
+ 	pci_write_config8(HOST_BRIDGE, SMRAMC, D_LCK | G_SMRAME | C_BASE_SEG);
+ }
+diff --git a/src/mainboard/emulation/qemu-q35/smihandler.c b/src/mainboard/emulation/qemu-q35/smihandler.c
+index a0417b5305..bf075a0971 100644
+--- a/src/mainboard/emulation/qemu-q35/smihandler.c
++++ b/src/mainboard/emulation/qemu-q35/smihandler.c
+@@ -8,6 +8,7 @@
+ #include <smmstore.h>
+ #include <southbridge/intel/common/pmbase.h>
+ #include <southbridge/intel/common/pmutil.h>
++#include <payload_mm_interface.h>
+ #include <string.h>
+ 
+ /*
+@@ -32,6 +33,17 @@
+  *   instruction after `out`.
+  */
+ 
++/* MM Payload interface overrides if enabled*/
++__weak int payload_mm_call_entrypoint(struct lb_entry_context context) {
++	return 1;
++}
++
++static struct lb_entry_context context = {
++	.command = 0,
++	.pm1_cnt = 0,
++	.acpi_base = 0,
++};
++
+ static const uint32_t amd64_revisions[] = {
+ 	0x00020064,
+ 	SMM_REV_INVALID,
+@@ -282,19 +294,56 @@ static void mainboard_smi_store(void)
+ 	set_save_state_reg(RAX, node, &ret, sizeof(ret));
+ }
+ 
++static void mainboard_smi_payload(void)
++{
++	u32 ret;
++	u8 sub_command;
++	uintptr_t reg_rbx;
++	int node = get_apmc_node(APM_CNT_PAYLOAD_MM);
++
++	if (node < 0)
++		return;
++
++	/* Command and return value in EAX */
++	if (get_save_state_reg(RAX, node, &ret, sizeof(ret)))
++		return;
++
++	sub_command = (u8)(ret >> 8);
++
++	/* Parameter buffer in EBX */
++	if (get_save_state_reg(RBX, node, &reg_rbx, sizeof(reg_rbx)))
++		return;
++
++	/* drivers/mm_payload_interface/smi.c */
++	ret = payload_mm_exec_interface(sub_command, reg_rbx);
++
++	set_save_state_reg(RAX, node, &ret, sizeof(ret));
++}
++
+ static int mainboard_finalized = 0;
+ 
+ void cpu_smi_handler(void)
+ {
+ 	u8 reg8;
++	int mm_payload_ret;
++	context.acpi_base = lpc_get_pmbase() + PM1_CNT;
++	context.pm1_cnt = read_pmbase32(PM1_CNT);
+ 
+ 	reg8 = apm_get_apmc();
+ 	switch (reg8) {
+ 	case APM_CNT_ACPI_DISABLE:
+-		write_pmbase32(PM1_CNT, read_pmbase32(PM1_CNT) & ~SCI_EN);
++		context.command = PAYLOAD_MM_ACPI_DISABLE;
++		mm_payload_ret = payload_mm_call_entrypoint(context);
++		if (mm_payload_ret) {
++			write_pmbase32(PM1_CNT, read_pmbase32(PM1_CNT) & ~SCI_EN);
++		}
+ 		break;
+ 	case APM_CNT_ACPI_ENABLE:
+-		write_pmbase32(PM1_CNT, read_pmbase32(PM1_CNT) | SCI_EN);
++		context.command = PAYLOAD_MM_ACPI_ENABLE;
++		mm_payload_ret = payload_mm_call_entrypoint(context);
++		if (mm_payload_ret) {
++			write_pmbase32(PM1_CNT, read_pmbase32(PM1_CNT) | SCI_EN);
++		}
+ 		break;
+ 	case APM_CNT_FINALIZE:
+ 		if (mainboard_finalized) {
+@@ -310,8 +359,16 @@ void cpu_smi_handler(void)
+ 			mainboard_smi_gsmi();
+ 		break;
+ 	case APM_CNT_SMMSTORE:
+-		if (CONFIG(SMMSTORE))
+-			mainboard_smi_store();
++		if (CONFIG(SMMSTORE)) {
++			context.command = PAYLOAD_MM_SMM_STORE;
++			mm_payload_ret = payload_mm_call_entrypoint(context);
++			if (mm_payload_ret)
++				mainboard_smi_store();
++		}
++		break;
++	case APM_CNT_PAYLOAD_MM:
++		if (CONFIG(PAYLOAD_MM_INTERFACE))
++			mainboard_smi_payload();
+ 		break;
+ 	}
+ }
+-- 
+2.49.0
+

@@ -1,0 +1,53 @@
+From c08f61eeac86c911a170521bbcb6930e460edc99 Mon Sep 17 00:00:00 2001
+From: Benjamin Doron <benjamin.doron@9elements.com>
+Date: Thu, 29 Feb 2024 15:32:35 -0500
+Subject: [PATCH 1/7] drivers/payload_mm_interface: Add payload MM config
+ symbol
+
+The payload MM feature depends on changes to be made in the tree first.
+Add just the config symbol now for these changes.
+
+Change-Id: Ib22fb9355379117f874ce535f0ed6bce10cf10db
+Signed-off-by: Benjamin Doron <benjamin.doron@9elements.com>
+---
+ src/drivers/payload_mm_interface/Kconfig | 11 +++++++++++
+ src/include/cpu/x86/smm.h                |  5 +++++
+ 2 files changed, 16 insertions(+)
+ create mode 100644 src/drivers/payload_mm_interface/Kconfig
+
+diff --git a/src/drivers/payload_mm_interface/Kconfig b/src/drivers/payload_mm_interface/Kconfig
+new file mode 100644
+index 0000000000..868ecdf16f
+--- /dev/null
++++ b/src/drivers/payload_mm_interface/Kconfig
+@@ -0,0 +1,11 @@
++## SPDX-License-Identifier: GPL-2.0-only
++
++config PAYLOAD_MM_INTERFACE
++	bool
++	default n
++	help
++	  Implements coreboot-to-payload compatibility layers for sharing SMM. coreboot will
++	  continue to initialise and own SMM. Payload can register to be called on SMI too.
++	  An example use-case is enabling EDK2 Secure Boot with Authenticated Variables.
++
++	  Select N if unsure.
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index b552d33b5a..f55ca7303a 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -180,6 +180,11 @@ int smm_setup_stack(const uintptr_t perm_smbase, const size_t perm_smram_size,
+ int smm_setup_relocation_handler(struct smm_loader_params *params);
+ int smm_load_module(uintptr_t smram_base, size_t smram_size, struct smm_loader_params *params);
+ 
++void soc_post_boot_smram_unlock(void);
++enum cb_err post_boot_smram_unlock(void);
++void soc_post_boot_smram_lock(void);
++enum cb_err post_boot_smram_lock(void);
++
+ u32 smm_get_cpu_smbase(unsigned int cpu_num);
+ 
+ /* Backup and restore default SMM region. */
+-- 
+2.49.0
+

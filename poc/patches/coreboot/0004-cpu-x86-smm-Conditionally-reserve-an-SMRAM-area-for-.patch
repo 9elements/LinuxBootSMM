@@ -1,0 +1,71 @@
+From 8894c28096525530f5e0f46b14ffd9ffc86e77d7 Mon Sep 17 00:00:00 2001
+From: Benjamin Doron <benjamin.doron@9elements.com>
+Date: Fri, 20 Oct 2023 15:07:04 -0400
+Subject: [PATCH 4/7] cpu/x86/smm: Conditionally reserve an SMRAM area for the
+ payload
+
+Change-Id: I701f3f0ce55e388180b7576b828c33f3319d7b0f
+Signed-off-by: Benjamin Doron <benjamin.doron@9elements.com>
+---
+ src/cpu/x86/smm/tseg_region.c | 20 ++++++++++++++++----
+ src/include/cpu/x86/smm.h     |  2 ++
+ 2 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/src/cpu/x86/smm/tseg_region.c b/src/cpu/x86/smm/tseg_region.c
+index 90e61dc426..7e23576ec2 100644
+--- a/src/cpu/x86/smm/tseg_region.c
++++ b/src/cpu/x86/smm/tseg_region.c
+@@ -17,6 +17,8 @@
+  *     +-------------------------+
+  *     |      code and data      |
+  *     |         (TSEG)          |
++ *     +-------------------------+
++ *     | (optional payload area) |
+  *     +-------------------------+ TSEG
+  */
+ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+@@ -33,14 +35,24 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 	else
+ 		return -1;
+ 
++#if CONFIG(PAYLOAD_MM_INTERFACE)
++	const size_t payload_size = (sub_size - (ied_size + cache_size)) / 2;
++#else
++	const size_t payload_size = 0;
++#endif
++
+ 	ASSERT(IS_ALIGNED(sub_base, sub_size));
+-	ASSERT(sub_size > (cache_size + ied_size));
++	ASSERT(sub_size > (payload_size + cache_size + ied_size));
+ 
+ 	switch (sub) {
++	case SMM_SUBREGION_PAYLOAD:
++		/* Payload starts at the base of TSEG. This allows granular protection. */
++		sub_size = payload_size;
++		break;
+ 	case SMM_SUBREGION_HANDLER:
+-		/* Handler starts at the base of TSEG. */
+-		sub_size -= ied_size;
+-		sub_size -= cache_size;
++		/* Handler follows payload subregion. */
++		sub_base += payload_size;
++		sub_size -= (ied_size + cache_size + payload_size);
+ 		break;
+ 	case SMM_SUBREGION_CACHE:
+ 		/* External cache is in the middle of TSEG. */
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index 96ac8c411d..ad52819d1c 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -205,6 +205,8 @@ static inline void aseg_region(uintptr_t *start, size_t *size)
+ }
+ 
+ enum {
++	/* Payload SMM area. */
++	SMM_SUBREGION_PAYLOAD,
+ 	/* SMM handler area. */
+ 	SMM_SUBREGION_HANDLER,
+ 	/* SMM cache region. */
+-- 
+2.49.0
+

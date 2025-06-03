@@ -1,0 +1,47 @@
+From 28ea11ac647b0144be210bffc8902b7fc3b2b635 Mon Sep 17 00:00:00 2001
+From: Benjamin Doron <benjamin.doron@9elements.com>
+Date: Thu, 29 Feb 2024 15:45:20 -0500
+Subject: [PATCH 3/7] cpu/x86/smm: Add SMM implementations of smm_*region()
+
+Used by the payload MM feature to discover the region it shares with the
+payload, which contains data necessary on the S3 resume path.
+
+Change-Id: I93b51360785ca63e8508ef4e686cdc921247d916
+Signed-off-by: Benjamin Doron <benjamin.doron@9elements.com>
+---
+ src/cpu/x86/smm/Makefile.mk          | 1 +
+ src/cpu/x86/smm/smm_module_handler.c | 6 ++++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/src/cpu/x86/smm/Makefile.mk b/src/cpu/x86/smm/Makefile.mk
+index a104a87743..2d6484e637 100644
+--- a/src/cpu/x86/smm/Makefile.mk
++++ b/src/cpu/x86/smm/Makefile.mk
+@@ -35,6 +35,7 @@ endif
+ smm-y += save_state.c
+ 
+ ramstage-y += tseg_region.c
++smm-y += tseg_region.c
+ romstage-y += tseg_region.c
+ postcar-y += tseg_region.c
+ 
+diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
+index d9f64204d6..82121fdf53 100644
+--- a/src/cpu/x86/smm/smm_module_handler.c
++++ b/src/cpu/x86/smm/smm_module_handler.c
+@@ -72,6 +72,12 @@ void smm_get_cbmemc_buffer(void **buffer_out, size_t *size_out)
+ 	*size_out = smm_runtime.cbmemc_size;
+ }
+ 
++void smm_region(uintptr_t *start, size_t *size)
++{
++	*start = smm_runtime.smbase;
++	*size = smm_runtime.smm_size;
++}
++
+ void io_trap_handler(int smif)
+ {
+ 	/* If a handler function handled a given IO trap, it
+-- 
+2.49.0
+

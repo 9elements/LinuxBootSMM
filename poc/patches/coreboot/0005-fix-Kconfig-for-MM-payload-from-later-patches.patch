@@ -1,0 +1,30 @@
+From 6c40e8cae427f1c42e292b3d0ae27c7765d9e524 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Fri, 16 May 2025 17:14:24 +0200
+Subject: [PATCH 5/7] fix: Kconfig for MM payload from later patches
+
+With this chain I had to cherry-pick from another chain, and this was
+added as a part of the commit that is not included.
+---
+ src/drivers/payload_mm_interface/Kconfig | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/drivers/payload_mm_interface/Kconfig b/src/drivers/payload_mm_interface/Kconfig
+index 981eb5f205..a738ae66fb 100644
+--- a/src/drivers/payload_mm_interface/Kconfig
++++ b/src/drivers/payload_mm_interface/Kconfig
+@@ -3,8 +3,9 @@
+ # FIXME: Warn that on some platforms, this extends the TCB through into the payload!
+ # - Alternatively: Some Kconfig dependency statement?
+ config PAYLOAD_MM_INTERFACE
+-	bool
+-	depends on HAVE_SMI_HANDLER
++	bool "Support for coreboot-mediated payload SMM"
++	depends on (SOC_INTEL_COMMON || SOC_AMD_COMMON) && HAVE_SMI_HANDLER
++	select SOC_AMD_COMMON_SMM_KEY if SOC_AMD_COMMON
+ 	default n
+ 	help
+ 	  Implements coreboot-to-payload compatibility layers for sharing SMM. coreboot will
+-- 
+2.49.0
+
