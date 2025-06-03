@@ -116,7 +116,7 @@ func patch(target Patch) error {
 				return err
 			}
 
-			cmd = exec.Command("git am", patchName)
+			cmd = exec.Command("git",  "am", patchName)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 			cmd.Dir = "coreboot-" + corebootVer
 			if err := cmd.Run(); err != nil {
@@ -136,7 +136,7 @@ func patch(target Patch) error {
 				return err
 			}
 
-			cmd = exec.Command("git am", patchName)
+			cmd = exec.Command("git", "am", patchName)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 			cmd.Dir = "linux-smm"
 			if err := cmd.Run(); err != nil {
@@ -229,15 +229,13 @@ func getGitVersion() error {
 func corebootGet() error {
 	cmd := exec.Command("make", "-j"+strconv.Itoa(threads), "crossgcc-i386", "CPUS=$(nproc)")
 
-	if !*build {
-		getGitVersion()
+	getGitVersion()
 
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("toolchain build failed %v\n", err)
-			return err
-		}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-" + corebootVer
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("toolchain build failed %v\n", err)
+		return err
 	}
 
 	if *configPath == "default" {
@@ -303,15 +301,14 @@ func getKernel() error {
 	var args = []string{"clone", "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git", "linux-smm"}
 	cmd := exec.Command("git", args...)
 
-	if !*build {
-		fmt.Printf("-------- Getting the kernel via git %v\n", args)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("didn't cloned the kernel %v\n", err)
-			return err
-		}
-		patch(linux)
+	
+	fmt.Printf("-------- Getting the kernel via git %v\n", args)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("didn't cloned the kernel %v\n", err)
+		//return err
 	}
+	patch(linux)
 
 	if *smpEnabled {
 		var config = []string{"-O", ".config", "https://raw.githubusercontent.com/micgor32/linuxbootsmm-builder/refs/heads/master/defconfig-linux-smp"}
@@ -346,8 +343,6 @@ func getKernel() error {
 }
 
 func kernelBuild() error {
-	getKernel()
-
 	fmt.Printf("--------  Building kernel\n")
 	cmd := exec.Command("make", "-j"+strconv.Itoa(threads))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -357,7 +352,7 @@ func kernelBuild() error {
 		return err
 	}
 
-	if err := cp.Copy("linux-smm/arch/x86/boot/bzImage", "coreboot-"+corebootVer+"/site-local/Image"); err != nil {
+	if err := cp.Copy("linux-smm/arch/x86/boot/bzImage", "coreboot-"+corebootVer+"/payloads/external/LinuxBoot/build/Image"); err != nil {
 		fmt.Printf("error copying the kernel image %v\n", err)
 		return err
 	}
@@ -365,13 +360,9 @@ func kernelBuild() error {
 }
 
 func buildCoreboot() error {
-	// Let's check whether the config is there
 	if _, err := os.Stat("coreboot-" + corebootVer + "/.config"); err != nil {
 		return err
 	}
-
-	kernelBuild()
-	corebootGet()
 
 	cmd := exec.Command("make", "-j"+strconv.Itoa(threads))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -508,6 +499,8 @@ func allFunc() error {
 	}{
 		{f: depinstall, skip: !*deps, ignore: false, n: "Install dependencies"},
 		{f: corebootGet, skip: *build || !*fetch, ignore: false, n: "Download coreboot"},
+		{f: getKernel, skip: *build || !*fetch, ignore: false, n: "download kernel sources"},
+		{f: kernelBuild, skip: *deps, ignore: false, n: "build kernel"},
 		{f: buildCoreboot, skip: *deps, ignore: false, n: "build coreboot"},
 	}
 
