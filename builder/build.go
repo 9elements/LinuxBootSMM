@@ -90,16 +90,14 @@ rootwait
 		"0003-cpu-x86-smm-Add-SMM-implementations-of-smm_-region.patch",
 		"0004-cpu-x86-smm-Conditionally-reserve-an-SMRAM-area-for-.patch",
 		"0005-fix-Kconfig-for-MM-payload-from-later-patches.patch",
-		"0006-feat-placing-MM-payload-in-SMRAM-without-unlocking-i.patch",
-		"0007-drivers-payload_mm_interface-reworked-no-unlock-appr.patch",
-		"0008-mb-intel-adlrvp-support-for-RVP-S-1-2.patch",
-		"0009-mb-intel-adlrvp-merged-support-for-RVP-S-M.patch",
-		"0010-mb-intel-adlrvp-support-for-RVP-S-2-2.patch",
+		"0006-drivers-payload_mm_interface-implement-no-unlock-MM-.patch",
+		"0007-mb-emulation-qemu-q35-hook-up-LinuxBoot-MM-to-SMI-ha.patch",
 	}
 	patchesLinux = []string{
-		"0001-drivers-firmware-google-support-for-parsing-MM-paylo.patch",
-		"0002-drivers-firmware-google-loader-for-kernel-owned-SMI-.patch",
-		"0003-drivers-firmware-google-runtime-MM-entry-point-calcu.patch",
+		"0001-drivers-firmware-add-passing-MM-payload-info-from-co.patch",
+		"0002-drivers-firmware-add-kernel-owned-SMI-handler.patch",
+		"0003-drivers-firmware-loader-for-kernel-owned-SMI-handler.patch",
+		"0004-driver-firmware-ACPI-management-in-SMI-handler.patch",
 	}
 	patchesTesting = []string{}
 )
