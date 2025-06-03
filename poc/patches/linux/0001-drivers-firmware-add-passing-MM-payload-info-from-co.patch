@@ -1,0 +1,251 @@
+From df61876f2f26e2919e38f53c32b11e50bba683e8 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Tue, 3 Jun 2025 14:07:49 +0200
+Subject: [PATCH 1/4] drivers/firmware: add passing MM payload info from
+ coreboot tables
+
+Extends the existing interface for coreboot tables with an entry for
+MM payload info structure. Will be used by follow-up patches introducing
+the MM payload driver.
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ drivers/firmware/google/Kconfig          | 12 +++++
+ drivers/firmware/google/Makefile         |  4 ++
+ drivers/firmware/google/coreboot_table.h | 41 +++++++++++-----
+ drivers/firmware/google/mm_info.c        | 62 ++++++++++++++++++++++++
+ drivers/firmware/google/mm_payload.h     | 26 ++++++++++
+ 5 files changed, 133 insertions(+), 12 deletions(-)
+ create mode 100644 drivers/firmware/google/mm_info.c
+ create mode 100644 drivers/firmware/google/mm_payload.h
+
+diff --git a/drivers/firmware/google/Kconfig b/drivers/firmware/google/Kconfig
+index 41b78f5cb735..5d918c076f25 100644
+--- a/drivers/firmware/google/Kconfig
++++ b/drivers/firmware/google/Kconfig
+@@ -81,4 +81,16 @@ config GOOGLE_VPD
+ 	  This option enables the kernel to expose the content of Google VPD
+ 	  under /sys/firmware/vpd.
+ 
++config COREBOOT_PAYLOAD_MM
++	tristate "SMI handling in Linux (LinuxBootSMM)"
++	depends on GOOGLE_COREBOOT_TABLE
++	help
++	  Enables support for SMI handling by Linux-owned code.
++	  coreboot reserves region for payload-owned SMI handler, the Linux
++	  driver prepares its SMI handler outside of SMRAM, and lets coreboot
++	  know where the handler is placed by issuing an SMI. On this SMI, the
++	  handler is being placed in SMRAM and all supported SMIs from that point
++	  on are handled by Linux-owned SMI handler.
++	  If in doubt, say N.
++
+ endif # GOOGLE_FIRMWARE
+diff --git a/drivers/firmware/google/Makefile b/drivers/firmware/google/Makefile
+index 8151e323cc43..fe9910c43a0f 100644
+--- a/drivers/firmware/google/Makefile
++++ b/drivers/firmware/google/Makefile
+@@ -12,3 +12,7 @@ obj-$(CONFIG_GOOGLE_CBMEM)		+= cbmem.o
+ 
+ vpd-sysfs-y := vpd.o vpd_decode.o
+ obj-$(CONFIG_GOOGLE_VPD)		+= vpd-sysfs.o
++
++# LinuxBootSMM related.
++obj-$(CONFIG_COREBOOT_PAYLOAD_MM)		+= mm_info.o
++
+diff --git a/drivers/firmware/google/coreboot_table.h b/drivers/firmware/google/coreboot_table.h
+index bb6f0f7299b4..86d5703c3f4c 100644
+--- a/drivers/firmware/google/coreboot_table.h
++++ b/drivers/firmware/google/coreboot_table.h
+@@ -7,6 +7,8 @@
+  * Copyright 2014 Gerd Hoffmann <kraxel@redhat.com>
+  * Copyright 2017 Google Inc.
+  * Copyright 2017 Samuel Holland <samuel@sholland.org>
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
+  */
+ 
+ #ifndef __COREBOOT_TABLE_H
+@@ -15,6 +17,11 @@
+ #include <linux/device.h>
+ #include <linux/mod_devicetable.h>
+ 
++struct cbuint64 {
++	u32 lo;
++	u32 hi;
++};
++
+ /* Coreboot table header structure */
+ struct coreboot_table_header {
+ 	char signature[4];
+@@ -41,7 +48,6 @@ struct lb_cbmem_ref {
+ };
+ 
+ #define LB_TAG_CBMEM_ENTRY 0x31
+-
+ /* Corresponds to LB_TAG_CBMEM_ENTRY */
+ struct lb_cbmem_entry {
+ 	u32 tag;
+@@ -52,6 +58,16 @@ struct lb_cbmem_entry {
+ 	u32 id;
+ };
+ 
++/* Corresponds to LB_TAG_PLD_MM_INTERFACE_INFO */
++#define LB_TAG_PLD_MM_INTERFACE_INFO 0x3b
++struct lb_pld_mm_interface_info {
++	u32 tag;
++	u32 size;
++	u8 revision;
++	u8 requires_long_mode_call;
++	u8 register_mm_entry_command;
++};
++
+ /* Describes framebuffer setup by coreboot */
+ struct lb_framebuffer {
+ 	u32 tag;
+@@ -61,15 +77,15 @@ struct lb_framebuffer {
+ 	u32 x_resolution;
+ 	u32 y_resolution;
+ 	u32 bytes_per_line;
+-	u8  bits_per_pixel;
+-	u8  red_mask_pos;
+-	u8  red_mask_size;
+-	u8  green_mask_pos;
+-	u8  green_mask_size;
+-	u8  blue_mask_pos;
+-	u8  blue_mask_size;
+-	u8  reserved_mask_pos;
+-	u8  reserved_mask_size;
++	u8 bits_per_pixel;
++	u8 red_mask_pos;
++	u8 red_mask_size;
++	u8 green_mask_pos;
++	u8 green_mask_size;
++	u8 blue_mask_pos;
++	u8 blue_mask_size;
++	u8 reserved_mask_pos;
++	u8 reserved_mask_size;
+ };
+ 
+ /* A device, additionally with information from coreboot. */
+@@ -80,6 +96,7 @@ struct coreboot_device {
+ 		struct lb_cbmem_ref cbmem_ref;
+ 		struct lb_cbmem_entry cbmem_entry;
+ 		struct lb_framebuffer framebuffer;
++		struct lb_pld_mm_interface_info mm_info;
+ 		DECLARE_FLEX_ARRAY(u8, raw);
+ 	};
+ };
+@@ -112,8 +129,8 @@ void coreboot_driver_unregister(struct coreboot_driver *driver);
+  * boilerplate.  Each module may only use this macro once, and
+  * calling it replaces module_init() and module_exit()
+  */
+-#define module_coreboot_driver(__coreboot_driver) \
++#define module_coreboot_driver(__coreboot_driver)                  \
+ 	module_driver(__coreboot_driver, coreboot_driver_register, \
+-			coreboot_driver_unregister)
++		      coreboot_driver_unregister)
+ 
+ #endif /* __COREBOOT_TABLE_H */
+diff --git a/drivers/firmware/google/mm_info.c b/drivers/firmware/google/mm_info.c
+new file mode 100644
+index 000000000000..b49d333e0c09
+--- /dev/null
++++ b/drivers/firmware/google/mm_info.c
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * mm_info.c
++ *
++ * Driver for exporting MM payload information from coreboot table.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/slab.h>
++
++#include "coreboot_table.h"
++#include "mm_payload.h"
++
++static struct lb_pld_mm_interface_info *mm_cbtable_info;
++struct mm_info *mm_info;
++
++static int mm_driver_probe(struct coreboot_device *dev)
++{
++	mm_cbtable_info = &dev->mm_info;
++	if (mm_cbtable_info->tag != LB_TAG_PLD_MM_INTERFACE_INFO)
++		return -ENXIO;
++
++	mm_info = kmalloc(sizeof(*mm_info), GFP_KERNEL);
++	mm_info->revision = mm_cbtable_info->revision;
++	mm_info->requires_long_mode_call =
++		mm_cbtable_info->requires_long_mode_call;
++	mm_info->register_mm_entry_command =
++		mm_cbtable_info->register_mm_entry_command;
++	return 0;
++}
++EXPORT_SYMBOL(mm_info);
++
++static void mm_driver_remove(struct coreboot_device *dev)
++{
++	kfree(mm_info);
++}
++
++static const struct coreboot_device_id mm_info_ids[] = {
++	{ .tag = LB_TAG_PLD_MM_INTERFACE_INFO },
++	{ /* sentinel */ }
++};
++
++MODULE_DEVICE_TABLE(coreboot, mm_info_ids);
++
++static struct coreboot_driver mm_driver = {
++	.probe = mm_driver_probe,
++	.remove = mm_driver_remove,
++	.drv = {
++		.name = "mm_info",
++	},
++	.id_table = mm_info_ids,
++};
++
++module_coreboot_driver(mm_driver);
++
++MODULE_AUTHOR("Michal Gorlas <michal.gorlas@9elements.com>");
++MODULE_DESCRIPTION("Driver for exporting MM info from coreboot table");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/firmware/google/mm_payload.h b/drivers/firmware/google/mm_payload.h
+new file mode 100644
+index 000000000000..c613a90efcd8
+--- /dev/null
++++ b/drivers/firmware/google/mm_payload.h
+@@ -0,0 +1,26 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * mm_payload.h
++ *
++ * Internal header for MM payload driver.
++ *
++ * Copyright 2025 9elements gmbh
++ * Copyright 2025 Michal Gorlas <michal.gorlas@9elements.com>
++ */
++
++#ifndef __MM_PAYLOAD_H
++#define __MM_PAYLOAD_H
++
++#define PAYLOAD_MM_RET_SUCCESS 0
++#define PAYLOAD_MM_RET_FAILURE 1
++#define PAYLOAD_MM_REGISTER_ENTRY 2
++
++struct mm_info {
++	u8 revision;
++	u8 requires_long_mode_call;
++	u8 register_mm_entry_command;
++};
++
++extern struct mm_info *mm_info;
++
++#endif
+-- 
+2.49.0
+

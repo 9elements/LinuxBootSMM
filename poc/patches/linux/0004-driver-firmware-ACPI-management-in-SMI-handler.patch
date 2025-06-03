@@ -1,0 +1,325 @@
+From b254d660b338366a2f71c08c3d4e54ca7ea161a3 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Tue, 3 Jun 2025 15:18:03 +0200
+Subject: [PATCH 4/4] driver/firmware: ACPI management in SMI handler
+
+Adds SoC independent ACPI enabling/disabling to the kernel-owned
+SMI handler. On a call from coreboots' SMI handler, the SoC specific
+defintions are passed as function parameters. Since both coreboot and
+Linux are using the same ABI, argument handling is pretty straight forward.
+Documented in detail as inline comments.
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ .../firmware/google/mm_handler/mm_handler.S   | 282 +++++++++++++++++-
+ 1 file changed, 280 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/firmware/google/mm_handler/mm_handler.S b/drivers/firmware/google/mm_handler/mm_handler.S
+index 03ac184b6389..6647dd268cd6 100644
+--- a/drivers/firmware/google/mm_handler/mm_handler.S
++++ b/drivers/firmware/google/mm_handler/mm_handler.S
+@@ -79,14 +79,160 @@ SYM_CODE_START(mm_entry_32)
+ 	out	%al, (%dx)
+ 
+ 	push	%esp
+-	// ebx, esi, edi and ebp are going to be preserved
+-	// (see comment in smm_stub.S if target is x86_64)
++	// ebx, esi, edi and ebp are going to be preserved (see comment in smm_stub.S if target is x86_64)
+ 	push	%ebx
+ 	push	%esi
+ 	push	%edi
+ 	push	%ebp
+ 	push	%eax
+ 
++	/*
++	 * Switch-case to jump to appropriate section for given functionality.
++	 * Macros are defined in mm_handler.h.
++	 * Short explaination of where does the magic n(%esp) came from.
++	 * Calling mm_entry_32 from coreboot pushes lb_entry_context (see include/payload_mm_interface.h) to stack and
++	 * increments esp by 4, so now our stack looks like this:
++	 * | third arg |
++	 * | second arg |
++	 * | first arg |
++	 * | return address |
++	 * | stack pointer | <- esp
++	 * Then we push all the registers (see above) and hence our stack looks like this now:
++	 * | third arg |
++	 * | second arg |
++	 * | first arg |
++	 * | return address |
++	 * | esp |
++	 * | ebx |
++	 * | esi |
++	 * | edi |
++	 * | ebp |
++	 * | eax |
++	 * | stack pointer | <- esp
++	 * So, now to get the entry we need, we do (9 * 4)(%esp) to get third argument (ACPI base address),
++	 * (8 * 4)(%esp) to get second argument (PM1_CNT byte), and (7 * 4) to get the command (so basically the condition for
++	 * our beautiful and modern if-else statement).
++	 * Protected mode is absolutely amazing...
++	 */
++
++	cmpl $MM_ACK, 28(%esp)
++	je ack32
++
++	cmpl $MM_ACPI_ENABLE, 28(%esp)
++	je acpi_enable32
++
++	cmpl $MM_ACPI_DISABLE, 28(%esp)
++	je acpi_disable32
++
++	cmpl $MM_STORE, 28(%esp)
++	je mm_store32
++
++	jmp restore_cb_state
++
++// Mainly for debugging, does nothing
++ack32:
++	mov	$0x3f8, %dx
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'c', %al
++	out	%al, (%dx)
++	mov	$'k', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	jmp	restore_cb_state
++
++acpi_enable32:
++	mov	$0x3f8, %dx
++	mov	$'E', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'b', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'A', %al
++	out	%al, (%dx)
++	mov	$'C', %al
++	out	%al, (%dx)
++	mov	$'P', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	// PM1_CNT & ~SCI_EN
++	mov	32(%esp), %ax
++	add	$MM_ACPI_ENABLE, %ax
++
++	// ACPI_BASE_ADDR
++	mov	36(%esp), %dx
++
++	out	%ax, %dx
++
++	jmp	restore_cb_state
++
++acpi_disable32:
++	mov	$0x3f8, %dx
++	mov	$'D', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'b', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'A', %al
++	out	%al, (%dx)
++	mov	$'C', %al
++	out	%al, (%dx)
++	mov	$'P', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	// PM1_CNT | SCI_EN
++	mov	32(%esp), %ax
++	add	$MM_ACPI_DISABLE, %ax
++
++	// ACPI_BASE_ADDR
++	mov	36(%esp), %dx
++
++	out	%ax, %dx
++
++	jmp	restore_cb_state
++
++mm_store32:
++	// Not implemented yet. Probably would be better to do that in C, BUT
++	// switching from here to C is pure pain...
++
+ restore_cb_state:
+ 	mov	$0x3f8, %dx
+ 	mov	$'M', %al
+@@ -213,6 +359,138 @@ SYM_CODE_START(mm_entry_64)
+ 	subq	$0x200, %rsp
+ 	fxsave64 (%rsp)
+ 
++	// Left as a reference
++	//movq $0x07f001aa, %rax
++	//movq %rdi, %rax
++	//callq *%rax
++
++	/*
++	 * Let the fun begin :D
++	 * Basically a switch-case but more "fun" to read.
++	 * All the macros we compare (r)di to are defined in mm_handler.h
++	 * This differs a bit from what we do above, as ABI calling convention
++	 * is not the same for protected and long mode. Basically as many values
++	 * from the struct we pass here as possible will be in rdi. Command is in the
++	 * first byte of the rdi, so we can just read of di.
++	 */
++	cmp $MM_ACK, %di
++	je ack
++
++	cmp $MM_ACPI_DISABLE, %di
++	je acpi_disable
++
++	cmp $MM_ACPI_ENABLE, %di
++	je acpi_enable
++
++	cmp $MM_STORE, %di
++	je mm_store
++
++	jmp restore_cb_state64
++
++// Mainly for debugging, does nothing
++ack:
++	mov	$0x3f8, %dx
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'c', %al
++	out	%al, (%dx)
++	mov	$'k', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++	jmp	restore_cb_state64
++
++acpi_enable:
++	mov	$0x3f8, %dx
++	mov	$'E', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'b', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'A', %al
++	out	%al, (%dx)
++	mov	$'C', %al
++	out	%al, (%dx)
++	mov	$'P', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	// Stash the command from rdi.
++	shr	$32, %rdi
++	// PM1_CNT & ~SCI_EN
++	mov	%di, %ax
++	add	$MM_ACPI_ENABLE, %ax
++	// si contains ACPI_BASE_ADDR
++	mov	%si, %dx
++
++	out	%ax, %dx
++
++	jmp	restore_cb_state64
++
++acpi_disable:
++	mov	$0x3f8, %dx
++	mov	$'D', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'b', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'A', %al
++	out	%al, (%dx)
++	mov	$'C', %al
++	out	%al, (%dx)
++	mov	$'P', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	// Stash command
++	shr	$32, %rdi
++	// PM1_CNT | SCI_EN
++	mov	%di, %ax
++	add	$MM_ACPI_DISABLE, %ax
++	// si contains ACPI_BASE_ADDR
++	mov	%si, %dx
++
++	out	%ax, %dx
++
++	jmp	restore_cb_state64
++
++mm_store:
++	// see cmmt above in mm_store32
++
+ restore_cb_state64:
+ 	mov	$0x3f8, %dx
+ 	mov	$'M', %al
+-- 
+2.49.0
+

@@ -1,0 +1,548 @@
+From b46d151ee398ff0bb637c3d2e01c01a56fcb55eb Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Tue, 3 Jun 2025 15:01:01 +0200
+Subject: [PATCH 2/4] drivers/firmware: add kernel-owned SMI handler
+
+Initial kernel-owned SMI handler. It is compiled as a
+separate binary, similiarly to the realmode trampolines.
+In this patch the handler's functionality is limited to
+preserving registers, restoring them and returning to
+coreboot. Will be extended in the follow-up patches.
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ drivers/firmware/google/Makefile              |   7 +
+ drivers/firmware/google/mm_blob.S             |  20 ++
+ drivers/firmware/google/mm_handler/Makefile   |  51 ++++
+ .../firmware/google/mm_handler/handler.lds.S  |  46 +++
+ .../firmware/google/mm_handler/mm_handler.S   | 273 ++++++++++++++++++
+ .../firmware/google/mm_handler/mm_handler.h   |  53 ++++
+ .../firmware/google/mm_handler/mm_header.S    |  23 ++
+ 7 files changed, 473 insertions(+)
+ create mode 100644 drivers/firmware/google/mm_blob.S
+ create mode 100644 drivers/firmware/google/mm_handler/Makefile
+ create mode 100644 drivers/firmware/google/mm_handler/handler.lds.S
+ create mode 100644 drivers/firmware/google/mm_handler/mm_handler.S
+ create mode 100644 drivers/firmware/google/mm_handler/mm_handler.h
+ create mode 100644 drivers/firmware/google/mm_handler/mm_header.S
+
+diff --git a/drivers/firmware/google/Makefile b/drivers/firmware/google/Makefile
+index fe9910c43a0f..50f7aeaad3c4 100644
+--- a/drivers/firmware/google/Makefile
++++ b/drivers/firmware/google/Makefile
+@@ -16,3 +16,10 @@ obj-$(CONFIG_GOOGLE_VPD)		+= vpd-sysfs.o
+ # LinuxBootSMM related.
+ obj-$(CONFIG_COREBOOT_PAYLOAD_MM)		+= mm_info.o
+ 
++subdir-						:= mm_handler
++obj-$(CONFIG_COREBOOT_PAYLOAD_MM)		+= mm_blob.o
++
++$(obj)/mm_blob.o: $(obj)/mm_handler/handler.bin
++
++$(obj)/mm_handler/handler.bin: FORCE
++	$(Q)$(MAKE) $(build)=$(obj)/mm_handler $@
+diff --git a/drivers/firmware/google/mm_blob.S b/drivers/firmware/google/mm_blob.S
+new file mode 100644
+index 000000000000..87557d67c47b
+--- /dev/null
++++ b/drivers/firmware/google/mm_blob.S
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Derived from rmpiggy.S.
++ *
++ * Wrapper script for the MM payload binary as a transport object
++ * before copying to SMRAM memory.
++ */
++#include <linux/linkage.h>
++#include <asm/page_types.h>
++
++	.section ".init.data","aw"
++
++	.balign PAGE_SIZE
++
++SYM_DATA_START(mm_blob)
++	.incbin	"drivers/firmware/google/mm_handler/handler.bin"
++SYM_DATA_END_LABEL(mm_blob, SYM_L_GLOBAL, mm_blob_end)
++
++SYM_DATA_START(mm_relocs)
++	.incbin	"drivers/firmware/google/mm_handler/handler.relocs"
++SYM_DATA_END(mm_relocs)
+diff --git a/drivers/firmware/google/mm_handler/Makefile b/drivers/firmware/google/mm_handler/Makefile
+new file mode 100644
+index 000000000000..c0069e88f51d
+--- /dev/null
++++ b/drivers/firmware/google/mm_handler/Makefile
+@@ -0,0 +1,51 @@
++# SPDX-License-Identifier: GPL-2.0
++
++## Based on realmode/rm/Makefile
++
++always-y := handler.bin handler.relocs
++
++handler-y			+= mm_header.o
++handler-y			+= mm_handler.o
++
++targets	+= $(handler-y)
++
++REALMODE_OBJS = $(addprefix $(obj)/,$(handler-y))
++
++sed-pasyms := -n -r -e 's/^([0-9a-fA-F]+) [ABCDGRSTVW] (.+)$$/pa_\2 = \2;/p'
++
++quiet_cmd_pasyms = PASYMS  $@
++      cmd_pasyms = $(NM) $(real-prereqs) | sed $(sed-pasyms) | sort | uniq > $@
++
++targets += pasyms.h
++$(obj)/pasyms.h: $(REALMODE_OBJS) FORCE
++	$(call if_changed,pasyms)
++
++targets += handler.lds
++$(obj)/handler.lds: $(obj)/pasyms.h
++
++LDFLAGS_handler.elf := -m elf_i386 --emit-relocs -T
++CPPFLAGS_handler.lds += -P -C -I$(objtree)/$(obj)
++
++targets += handler.elf
++$(obj)/handler.elf: $(obj)/handler.lds $(REALMODE_OBJS) FORCE
++	$(call if_changed,ld)
++
++OBJCOPYFLAGS_handler.bin := -O binary
++
++targets += handler.bin
++$(obj)/handler.bin: $(obj)/handler.elf $(obj)/handler.relocs FORCE
++	$(call if_changed,objcopy)
++
++quiet_cmd_relocs = RELOCS  $@
++      cmd_relocs = arch/x86/tools/relocs --realmode $< > $@
++
++targets += handler.relocs
++$(obj)/handler.relocs: $(obj)/handler.elf FORCE
++	$(call if_changed,relocs)
++
++# ---------------------------------------------------------------------------
++
++KBUILD_CFLAGS	:= $(REALMODE_CFLAGS) -D_SETUP -D_WAKEUP \
++		   -I$(srctree)/arch/x86/boot
++KBUILD_AFLAGS	:= $(KBUILD_CFLAGS) -D__ASSEMBLY__
++KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
+diff --git a/drivers/firmware/google/mm_handler/handler.lds.S b/drivers/firmware/google/mm_handler/handler.lds.S
+new file mode 100644
+index 000000000000..c92c9f2fbd62
+--- /dev/null
++++ b/drivers/firmware/google/mm_handler/handler.lds.S
+@@ -0,0 +1,46 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * blob.lds.S
++ *
++ * Linker script for the MM handler. Based on realmode.lds.S
++ */
++
++#include <asm/page_types.h>
++
++#undef i386
++
++OUTPUT_FORMAT("elf32-i386")
++OUTPUT_ARCH(i386)
++ENTRY(pa_text_start)
++
++SECTIONS
++{
++	. = 0;
++	.header : {
++		*(.header)
++	}
++
++	pa_text_start = .;
++	.text32 : {
++		*(.text32)
++		*(.text32.*)
++	}
++
++	.text64 : {
++		*(.text64)
++		*(.text64.*)
++	}
++
++	. = ALIGN(128);
++	.bss : {
++		*(.bss*)
++	}
++
++	/DISCARD/ : {
++		*(.data*)
++		*(.note*)
++		*(.debug*)
++	}
++
++#include "pasyms.h"
++}
+diff --git a/drivers/firmware/google/mm_handler/mm_handler.S b/drivers/firmware/google/mm_handler/mm_handler.S
+new file mode 100644
+index 000000000000..03ac184b6389
+--- /dev/null
++++ b/drivers/firmware/google/mm_handler/mm_handler.S
+@@ -0,0 +1,273 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *	Derived from Setup.S by Linus Torvalds
++ *
++ *	Payload owned SMI handler that is placed in SMRAM (mm_loader.c) and called
++ *	by coreboot's SMI handler
++ *
++ *	Also see the general comment in trampoline_64.S.
++ */
++
++#include <linux/linkage.h>
++#include <asm/pgtable_types.h>
++#include <asm/page_types.h>
++#include <asm/msr.h>
++#include <asm/segment.h>
++#include <asm/processor-flags.h>
++#include <asm/realmode.h>
++
++#include "mm_handler.h"
++
++	.section ".text32","ax"
++	.code32
++	.balign 4
++SYM_CODE_START(mm_entry_32)
++	mov	$0x3f8, %dx
++	mov	$'L', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'u', %al
++	out	%al, (%dx)
++	mov	$'x', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'S', %al
++	out	%al, (%dx)
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'h', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'d', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'e', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	push	%esp
++	// ebx, esi, edi and ebp are going to be preserved
++	// (see comment in smm_stub.S if target is x86_64)
++	push	%ebx
++	push	%esi
++	push	%edi
++	push	%ebp
++	push	%eax
++
++restore_cb_state:
++	mov	$0x3f8, %dx
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'e', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'u', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	pop	%eax
++	pop	%ebp
++	pop	%edi
++	pop	%esi
++	pop	%ebx
++	pop	%esp
++
++	ret
++SYM_CODE_END(mm_entry_32)
++
++
++	.section ".text64","ax"
++	.code64
++	.balign 4
++SYM_CODE_START(mm_entry_64)
++	mov	$0x3f8, %dx
++	mov	$'L', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'u', %al
++	out	%al, (%dx)
++	mov	$'x', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'S', %al
++	out	%al, (%dx)
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$'I', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'h', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'d', %al
++	out	%al, (%dx)
++	mov	$'l', %al
++	out	%al, (%dx)
++	mov	$'e', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'a', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'i', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'g', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	pushq	%rsp
++
++	pushq	%rbp
++	pushq	%rbx
++	pushq	%r12
++	pushq	%r13
++	pushq	%r14
++	pushq	%r15
++
++	movq	%cr3, %rax
++	pushq	%rax
++
++	movq	%cr4, %rbx
++	pushq	%rbx
++	or	$0x640, %rbx
++
++	movq	%rbx, %cr4
++
++	movq	%cr0, %rbx
++	pushq	%rbx
++	or	$0x22, %rbx
++
++	mov	%rbx, %cr0
++
++	movq	%rsp, %r12
++	andq	$~0xF, %rsp
++
++	subq	$0x200, %rsp
++	fxsave64 (%rsp)
++
++restore_cb_state64:
++	mov	$0x3f8, %dx
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$'M', %al
++	out	%al, (%dx)
++	mov	$'6', %al
++	out	%al, (%dx)
++	mov	$'4', %al
++	out	%al, (%dx)
++	mov	$' ', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'e', %al
++	out	%al, (%dx)
++	mov	$'t', %al
++	out	%al, (%dx)
++	mov	$'u', %al
++	out	%al, (%dx)
++	mov	$'r', %al
++	out	%al, (%dx)
++	mov	$'n', %al
++	out	%al, (%dx)
++	mov	$'s', %al
++	out	%al, (%dx)
++	mov	$'\n', %al
++	out	%al, (%dx)
++
++	fxrstor64 (%rsp)
++	addq	$0x200, %rsp
++	movq	%r12, %rsp
++
++	popq	%rbx
++	movq	%rbx, %cr0
++
++	popq	%rbx
++	movq	%rbx, %cr4
++
++	popq	%rax
++	movq	%rax, %cr3
++
++	popq	%r15
++	popq	%r14
++	popq	%r13
++	popq	%r12
++	popq	%rbx
++	popq	%rbp
++	popq	%rsp
++	ret
++SYM_CODE_END(mm_entry_64)
++
++	.bss
++	.balign	4
++SYM_DATA(mm_signature,		.space 4)
++SYM_DATA(mm_blob_size,		.space 2)
++SYM_DATA(mm_entry_32_offset,	.space 4)
++SYM_DATA(mm_entry_64_offset,	.space 4)
+diff --git a/drivers/firmware/google/mm_handler/mm_handler.h b/drivers/firmware/google/mm_handler/mm_handler.h
+new file mode 100644
+index 000000000000..8d424e6bf990
+--- /dev/null
++++ b/drivers/firmware/google/mm_handler/mm_handler.h
+@@ -0,0 +1,53 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Derived from arch/x86/include/realmode.h
++ */
++
++#ifndef _MM_HANDLER_H
++#define _MM_HANDLER_H
++
++#define REALMODE_END_SIGNATURE	0x65a22c82
++
++/*
++ * These macros correspond to the arguments
++ * passed by coreboot's SMI handler. Depending
++ * on which one is passed in rdi or esp + x, handler
++ * will jump to the appropriate section.
++ */
++#define MM_ACPI_ENABLE		1
++#define MM_ACPI_DISABLE		0
++#define MM_STORE		2
++#define MM_ACK			5
++
++#define PM1_CNT			0x04 // Intel specific
++
++#ifndef __ASSEMBLY__
++
++#include <linux/types.h>
++
++/* This must match data at header.S */
++struct mm_header {
++	u32	text_start;
++	u32	mm_entry_32;
++	u32	mm_entry_64;
++	u32	mm_signature;
++	u32	mm_blob_size;
++};
++
++extern struct mm_header *mm_header;
++extern unsigned char mm_blob_end[];
++
++extern unsigned char mm_blob[];
++extern unsigned char mm_relocs[];
++
++/*
++ * This has to be under 1MB (see tseg_region.c in coreboot source tree).
++ * Now we just check whether blob fits payload TSEG region size.
++ */
++static inline size_t mm_payload_size_needed(void)
++{
++	return mm_blob_end - mm_blob;
++}
++
++#endif /* __ASSEMBLER__ */
++#endif /* _MM_HANDLER_H */
+diff --git a/drivers/firmware/google/mm_handler/mm_header.S b/drivers/firmware/google/mm_handler/mm_header.S
+new file mode 100644
+index 000000000000..66f2af3830f9
+--- /dev/null
++++ b/drivers/firmware/google/mm_handler/mm_header.S
+@@ -0,0 +1,23 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * MM blob header; this should match mm_trampoline.h and be
++ * readonly; for mutable data instead add pointers into the .data
++ * or .bss sections as appropriate.
++ */
++
++#include <linux/linkage.h>
++#include <asm/page_types.h>
++#include <asm/segment.h>
++
++#include "mm_handler.h"
++
++	.section ".header", "a"
++
++	.balign	16
++SYM_DATA_START(mm_header)
++	.long	pa_text_start
++	.long	pa_mm_entry_32
++	.long	pa_mm_entry_64
++	.long	pa_mm_signature
++	.long	pa_mm_blob_size
++SYM_DATA_END(mm_header)
+-- 
+2.49.0
+
