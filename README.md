@@ -4,7 +4,7 @@ This repo contains the patches for Linux and coreboot needed to build PoC of Lin
 
 # Navigating the repo
 - [`linux/`](https://github.com/micgor32/linux): working kernel tree with detailed history of development
-- [`linuxbootsmm-builder`](https://github.com/micgor32/linuxbootsmm-builder): builder script for LinuxBootSMM and integration tests
+- [`builder`](builder/): builder script for LinuxBootSMM and integration tests
 - [`poc`](poc/): patches for Linux kernel and coreboot (i.e. LinuxBootSMM sources)
 
 # Documentation
