@@ -151,7 +151,7 @@ func patch(target Patch) error {
 }
 
 func getGitVersion() error {
-	var args = []string{"clone", "https://github.com/micgor32/coreboot.git", "coreboot-" + corebootVer}
+	var args = []string{"clone", "https://review.coreboot.org/coreboot.git", "coreboot-" + corebootVer}
 	fmt.Printf("-------- Getting the coreboot via git %v\n", args)
 	cmd := exec.Command("git", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
