@@ -1,5 +1,5 @@
 # LinuxbootSMM Builder
-[![Go Report Card](https://goreportcard.com/badge/github.com/micgor32/linuxbootsmm-builder)](https://goreportcard.com/report/github.com/micgor32/linuxbootsmm-builder)
+[![Go Report Card](https://goreportcard.com/badge/github.com/9elements/LinuxBootSMM/builder)](https://goreportcard.com/report/github.com/9elements/LinuxbootSMM/builder)
 [![GoDoc](https://godoc.org/github.com/micgor32/linuxbootsmm-builder?status.svg)](https://godoc.org/github.com/micgor32/linuxbootsmm-builder)
 
 A simple script to build coreboot image with LinuxBootSMM as a payload.
@@ -14,7 +14,7 @@ either Arch Linux, Fedora or Debian/Ubuntu.
 ## Usage
 Install using go:
 ```sh
-go install github.com/micgor32/linuxbootsmm-builder@latest
+go install github.com/9elements/LinuxbootSMM/builder@latest
 ```
 Check whether you have all dependencies mentioned [here](https://doc.coreboot.org/tutorial/part1.html#step-1-install-tools-and-libraries-needed-for-coreboot) installed, or run:
 ```sh
