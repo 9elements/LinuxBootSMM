@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"flag"
 
 	cp "github.com/otiai10/copy"
-	flag "github.com/spf13/pflag"
 )
 
 type Patch int64
@@ -241,7 +241,7 @@ func corebootGet() error {
 	}
 
 	if *configPath == "default" {
-		var config = []string{"-O", "defconfig", "https://raw.githubusercontent.com/micgor32/linuxbootsmm-builder/refs/heads/master/defconfig-raptorlake"}
+		var config = []string{"-O", "defconfig", "https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/defconfig-raptorlake"}
 		cmd = exec.Command("wget", config...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Dir = "coreboot-" + corebootVer
@@ -253,9 +253,9 @@ func corebootGet() error {
 		// well this is dirty way, but anyways...
 		var repoURL = ""
 		if *bitness == "32" || *bitness == "64" {
-			repoURL = "https://raw.githubusercontent.com/micgor32/linuxbootsmm-builder/refs/heads/master/defconfig-qemu" + *bitness
+			repoURL = "https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/defconfig-qemu" + *bitness
 		} else {
-			repoURL = "https://raw.githubusercontent.com/micgor32/linuxbootsmm-builder/refs/heads/master/defconfig-qemu" + *bitness
+			repoURL = "https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/defconfig-qemu" + *bitness
 		}
 
 		var config = []string{"-O", "defconfig", repoURL}
@@ -298,69 +298,6 @@ func corebootGet() error {
 
 	return nil
 }
-
-// func patchKernel() error {
-// 	// TODO: consider also checking the patch correctness before applying (i.e. run git apply --check *path_to_patch*).
-// 	var patchParsers = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
-// 	cmd := exec.Command("wget", patchParsers...)
-// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	cmd.Dir = "linux-smm"
-// 	if err := cmd.Run(); err != nil {
-// 		fmt.Printf("obtaining patch failed %v", err)
-// 		return err
-// 	}
-
-// 	var patchLoader = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0002-loader-for-linux-owned-smi-handler.diff"}
-// 	cmd = exec.Command("wget", patchLoader...)
-// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	cmd.Dir = "linux-smm"
-// 	if err := cmd.Run(); err != nil {
-// 		fmt.Printf("obtaining patch failed %v", err)
-// 		return err
-// 	}
-
-// 	fmt.Printf("--------  Patching kernel\n")
-// 	var applyParsers = []string{"am", "patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
-// 	cmd = exec.Command("git", applyParsers...)
-// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	cmd.Dir = "linux-smm"
-// 	if err := cmd.Run(); err != nil {
-// 		fmt.Printf("applying patch failed %v", err)
-// 		return err
-// 	}
-
-// 	var applyLoader = []string{"am", "patch-0002-loader-for-linux-owned-smi-handler.diff"}
-// 	cmd = exec.Command("git", applyLoader...)
-// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	cmd.Dir = "linux-smm"
-// 	if err := cmd.Run(); err != nil {
-// 		fmt.Printf("applying patch failed %v\n", err)
-// 		return err
-// 	}
-
-// 	// if *testing == 6 || *testing == 7 {
-// 	// 	var patchLoader = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0002-loader-for-linux-owned-smi-handler.diff"}
-// 	// 	cmd = exec.Command("wget", patchLoader...)
-// 	// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	// 	cmd.Dir = "linux-smm"
-// 	// 	if err := cmd.Run(); err != nil {
-// 	// 		fmt.Printf("obtaining patch failed %v", err)
-// 	// 		return err
-// 	// 	}
-
-// 	// 	fmt.Printf("--------  Patching kernel for tests\n")
-// 	// 	var applyParsers = []string{"am", "patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
-// 	// 	cmd = exec.Command("git", applyParsers...)
-// 	// 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 	// 	cmd.Dir = "linux-smm"
-// 	// 	if err := cmd.Run(); err != nil {
-// 	// 		fmt.Printf("applying patch failed %v", err)
-// 	// 		return err
-// 	// 	}
-// 	// }
-
-// 	return nil
-// }
 
 func getKernel() error {
 	var args = []string{"clone", "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git", "linux-smm"}
