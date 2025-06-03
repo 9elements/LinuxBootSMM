@@ -34,6 +34,7 @@ Usage of linuxbootsmm-builder:
 ```
 If no custom `site-local` is provided (i.e. no `--blobs` specified), the builder will create empty one in which the kernel image and initramfs are going to be placed after compilation. 
 Please also note that when using default config, builder script assumes that it is being run under in `/tmp`!
+For more details about creating custom configs for different platforms, please refer to the [wiki page](https://github.com/9elements/LinuxBootSMM/wiki/Building-and-usage).
 
 ## Example usage - QEMU Q35
 In order to build an example of coreboot+LinuxBootSMM, one can use QEMU emulator:
