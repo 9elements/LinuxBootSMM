@@ -2,7 +2,7 @@
 
 obj-m += smi.o
 
-KDIR  := /home/micgor32/patches-prep/linux # hardcoded path, remove later
+KDIR  := /tmp/linux-smm # assuming that this will be run from the builder script
 PWD   := $(shell pwd)
 
 default:
