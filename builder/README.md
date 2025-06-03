@@ -1,5 +1,5 @@
 # LinuxbootSMM Builder
-[![Go Report Card](https://goreportcard.com/badge/github.com/9elements/LinuxBootSMM/builder)](https://goreportcard.com/report/github.com/9elements/LinuxbootSMM/builder)
+[![Go Report Card](https://goreportcard.com/badge/github.com/9elements/LinuxBootSMM/builder)](https://goreportcard.com/report/github.com/9elements/LinuxBootSMM/builder)
 [![GoDoc](https://godoc.org/github.com/micgor32/linuxbootsmm-builder?status.svg)](https://godoc.org/github.com/micgor32/linuxbootsmm-builder)
 
 A simple script to build coreboot image with LinuxBootSMM as a payload.
