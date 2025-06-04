@@ -161,27 +161,8 @@ func getGitVersion() error {
 	}
 
 	switch *testing {
-	case 1:
-		var noLockPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0002-loader-for-linux-owned-smi-handler.diff"}
-		cmd = exec.Command("wget", noLockPatch...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("obtaining patch failed %v", err)
-			return err
-		}
-
-		fmt.Printf("--------  Patching coreboot for tests\n")
-		var applyNoLock = []string{"am", "patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
-		cmd = exec.Command("git", applyNoLock...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("applying patch failed %v", err)
-			return err
-		}
 	case 2:
-		var noLockNoRegPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0002-loader-for-linux-owned-smi-handler.diff"}
+		var noLockNoRegPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
 		cmd = exec.Command("wget", noLockNoRegPatch...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Dir = "coreboot-" + corebootVer
@@ -191,7 +172,7 @@ func getGitVersion() error {
 		}
 
 		fmt.Printf("--------  Patching coreboot for tests\n")
-		var applyNoLockNoReg = []string{"am", "patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
+		var applyNoLockNoReg = []string{"am", "0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
 		cmd = exec.Command("git", applyNoLockNoReg...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Dir = "coreboot-" + corebootVer
@@ -200,7 +181,7 @@ func getGitVersion() error {
 			return err
 		}
 	case 3:
-		var noUnlockPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/poc/patches/patch-0002-loader-for-linux-owned-smi-handler.diff"}
+		var noUnlockPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
 		cmd = exec.Command("wget", noUnlockPatch...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Dir = "coreboot-" + corebootVer
@@ -210,7 +191,7 @@ func getGitVersion() error {
 		}
 
 		fmt.Printf("--------  Patching coreboot for tests\n")
-		var applyNoUnlock = []string{"am", "patch-0001-drivers-firmware-smm-parsing-SMM-related-informations-from-coreboot-table.diff"}
+		var applyNoUnlock = []string{"am", "0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
 		cmd = exec.Command("git", applyNoUnlock...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Dir = "coreboot-" + corebootVer
@@ -218,7 +199,6 @@ func getGitVersion() error {
 			fmt.Printf("applying patch failed %v", err)
 			return err
 		}
-
 	default:
 		break
 	}
@@ -284,6 +264,20 @@ func corebootGet() error {
 	if err := patch(coreboot); err != nil {
 		fmt.Printf("applying patches failed %v", err)
 		return err
+	}
+
+	if *testing != 0 {
+		f, err := os.OpenFile("coreboot-"+corebootVer+"/defconfig", os.O_APPEND|os.O_WRONLY, 0644) 
+
+		if err != nil {
+			return err
+		}
+
+		defer f.Close()
+
+		if _, err := f.WriteString("CONFIG_LINUXBOOT_UROOT_FILES='site-local/smi.ko'\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM=y\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM_CMD='insmod ./smi.ko'"); err != nil {
+			return nil
+		}
 	}
 
 	cmd = exec.Command("make", "defconfig", "KBUILD_DEFCONFIG=defconfig")
@@ -359,9 +353,28 @@ func kernelBuild() error {
 	return nil
 }
 
+func includeTestingMod() error {
+	var mod = []string{"https://github.com/9elements/LinuxBootSMM/raw/refs/heads/main/builder/integration/handler-test/smi.ko"}
+	cmd := exec.Command("wget", mod...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-"+corebootVer+"/site-local"
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("obtaining config failed %v\n", err)
+		return err
+	}	
+	
+	return nil
+}
+
 func buildCoreboot() error {
 	if _, err := os.Stat("coreboot-" + corebootVer + "/.config"); err != nil {
 		return err
+	}
+
+	if *testing != 0 {
+		if err := includeTestingMod(); err != nil {
+			return err
+		}
 	}
 
 	cmd := exec.Command("make", "-j"+strconv.Itoa(threads))
