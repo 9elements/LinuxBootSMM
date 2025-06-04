@@ -1,0 +1,29 @@
+From 2489e688080baba55b0b4864ee1618970ca9df9d Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Wed, 4 Jun 2025 12:49:20 +0200
+Subject: [PATCH] drivers/payload_mm_interface: triggering test case for header
+ signature check
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ src/drivers/payload_mm_interface/smi.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/payload_mm_interface/smi.c b/src/drivers/payload_mm_interface/smi.c
+index 8dbcbbd3f7..5585e84d57 100644
+--- a/src/drivers/payload_mm_interface/smi.c
++++ b/src/drivers/payload_mm_interface/smi.c
+@@ -50,7 +50,9 @@ static uint8_t payload_mm_load(uintptr_t mm_address)
+ 	payload_mm_get_reserved_region(&payload_mm_region_base, &payload_mm_region_size);
+ 	struct mm_header *mm_header;
+ 
+-	mm_header = (void *)mm_address;
++	// Adding offset should "simulate" the case where signature doesnt match and
++	// consequently trigger the signature check to fail.
++	mm_header = (void *)mm_address + 0x4;
+ 
+ 	if (mm_header->mm_signature != REALMODE_END_SIGNATURE) {
+ 			printk(BIOS_WARNING, "MM signature mismatch! Bootloader: %x, Payload: %x.\n",
+-- 
+2.49.0
+

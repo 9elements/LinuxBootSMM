@@ -1,0 +1,30 @@
+From 971e74d6ed82b5f60f671ad46aac7ee08a273f8d Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Wed, 4 Jun 2025 14:02:29 +0200
+Subject: [PATCH] drivers/payload_mm_interface: triggering test case for
+ signature fail check on entry point
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ src/drivers/payload_mm_interface/smi.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/drivers/payload_mm_interface/smi.c b/src/drivers/payload_mm_interface/smi.c
+index 8dbcbbd3f7..03343dee0f 100644
+--- a/src/drivers/payload_mm_interface/smi.c
++++ b/src/drivers/payload_mm_interface/smi.c
+@@ -65,6 +65,11 @@ static uint8_t payload_mm_load(uintptr_t mm_address)
+ 
+ 	size_t payload_mm_blob_size = mm_header->mm_blob_size;
+ 
++	// To simulate the case when blob is not copied to
++	// the appropriate region (i.e. the signature check on getting
++	// entry point will fail).
++	payload_mm_region_base = 0x20000;
++
+ 	memcpy((void *)payload_mm_region_base, (void *)mm_address, payload_mm_blob_size);
+ 	printk(BIOS_DEBUG, "Payload MM loaded core module to 0x%lx.\n", payload_mm_region_base);
+ 
+-- 
+2.49.0
+
