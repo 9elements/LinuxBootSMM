@@ -144,6 +144,46 @@ func patch(target Patch) error {
 				return err
 			}
 		}
+	case tests:
+		if *testing == 2 {
+			var noLockNoRegPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
+			cmd := exec.Command("wget", noLockNoRegPatch...)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			cmd.Dir = "coreboot-" + corebootVer
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("obtaining patch failed %v", err)
+				return err
+			}
+
+			fmt.Printf("--------  Patching coreboot for tests\n")
+			var applyNoLockNoReg = []string{"am", "0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
+			cmd = exec.Command("git", applyNoLockNoReg...)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			cmd.Dir = "coreboot-" + corebootVer
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("applying patch failed %v", err)
+				return err
+			}
+		} else if *testing == 3 {
+			var noUnlockPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
+			cmd := exec.Command("wget", noUnlockPatch...)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			cmd.Dir = "coreboot-" + corebootVer
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("obtaining patch failed %v", err)
+				return err
+			}
+
+			fmt.Printf("--------  Patching coreboot for tests\n")
+			var applyNoUnlock = []string{"am", "0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
+			cmd = exec.Command("git", applyNoUnlock...)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			cmd.Dir = "coreboot-" + corebootVer
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("applying patch failed %v", err)
+				return err
+			}
+		}
 	default:
 		return fmt.Errorf("target not found")
 	}
@@ -160,51 +200,44 @@ func getGitVersion() error {
 		return err
 	}
 
-	switch *testing {
-	case 2:
-		var noLockNoRegPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
-		cmd = exec.Command("wget", noLockNoRegPatch...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("obtaining patch failed %v", err)
-			return err
-		}
-
-		fmt.Printf("--------  Patching coreboot for tests\n")
-		var applyNoLockNoReg = []string{"am", "0001-drivers-payload_mm_interface-triggering-test-case-fo.patch"}
-		cmd = exec.Command("git", applyNoLockNoReg...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("applying patch failed %v", err)
-			return err
-		}
-	case 3:
-		var noUnlockPatch = []string{"https://raw.githubusercontent.com/9elements/LinuxBootSMM/refs/heads/main/builder/integration/testing_patches/0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
-		cmd = exec.Command("wget", noUnlockPatch...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("obtaining patch failed %v", err)
-			return err
-		}
-
-		fmt.Printf("--------  Patching coreboot for tests\n")
-		var applyNoUnlock = []string{"am", "0002-drivers-payload_mm_interface-triggering-post-ep-check.patch"}
-		cmd = exec.Command("git", applyNoUnlock...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		cmd.Dir = "coreboot-" + corebootVer
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("applying patch failed %v", err)
-			return err
-		}
-	default:
-		break
-	}
-
 	return nil
 }
+
+func corebootDefconfig() error {
+	if *testing != 0 {
+		f, err := os.OpenFile("coreboot-"+corebootVer+"/defconfig", os.O_APPEND|os.O_WRONLY, 0644) 
+
+		if err != nil {
+			return err
+		}
+
+		defer f.Close()
+
+		if _, err := f.WriteString("CONFIG_LINUXBOOT_UROOT_FILES=\"site-local/smi.ko:smi.ko\"\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM=y\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM_CMD=\"'insmod ./smi.ko'\""); err != nil {
+			return nil
+		}
+	}
+
+	cmd := exec.Command("make", "defconfig", "KBUILD_DEFCONFIG=defconfig")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-" + corebootVer
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("generating config failed %v\n", err)
+		return err
+	}
+
+	// sometimes cb build system behaves weirdly and skips u-root 
+	// generation if initramfs exists (even tho we changed something with the config)
+	cmd = exec.Command("make", "clean")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-" + corebootVer
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("cleaning failed %v\n", err) // "unicorn" case, no one ever saw it :D
+		return err
+	}
+	return nil
+}
+
 
 func corebootGet() error {
 	cmd := exec.Command("make", "-j"+strconv.Itoa(threads), "crossgcc-i386", "CPUS=$(nproc)")
@@ -265,26 +298,15 @@ func corebootGet() error {
 		fmt.Printf("applying patches failed %v", err)
 		return err
 	}
-
+	
 	if *testing != 0 {
-		f, err := os.OpenFile("coreboot-"+corebootVer+"/defconfig", os.O_APPEND|os.O_WRONLY, 0644) 
-
-		if err != nil {
+		if err := patch(tests); err != nil {
+			fmt.Printf("applying patches failed %v", err)
 			return err
-		}
-
-		defer f.Close()
-
-		if _, err := f.WriteString("CONFIG_LINUXBOOT_UROOT_FILES='site-local/smi.ko'\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM=y\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM_CMD='insmod ./smi.ko'"); err != nil {
-			return nil
 		}
 	}
 
-	cmd = exec.Command("make", "defconfig", "KBUILD_DEFCONFIG=defconfig")
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Dir = "coreboot-" + corebootVer
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("generating config failed %v\n", err)
+	if err := corebootDefconfig(); err != nil {
 		return err
 	}
 
@@ -361,7 +383,22 @@ func includeTestingMod() error {
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("obtaining config failed %v\n", err)
 		return err
-	}	
+	}
+
+	if err := corebootDefconfig(); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+func resetTree() error {
+	cmd := exec.Command("git",  "reset", "--hard", "origin/main")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-" + corebootVer
+	if err := cmd.Run(); err != nil {
+		return err
+	}
 	
 	return nil
 }
@@ -373,6 +410,24 @@ func buildCoreboot() error {
 
 	if *testing != 0 {
 		if err := includeTestingMod(); err != nil {
+			return err
+		}
+		// So at this point it is impossible to say how many patches are already applied,
+		// it could be that someone ran --build --testing 2 and now wants 3rd test case, or
+		// maybe clean build who knows. Safest way to deal with this (that I could think of
+		// at the time being) is to reset to origin/main and reapply base patches + (if testing
+		// is provided) additional ones.
+		if err := resetTree(); err != nil {
+			return err // another "unicorn" case
+		}
+
+		if err := patch(coreboot); err != nil {
+			fmt.Printf("applying patches failed %v", err)
+			return err
+		}
+	
+		if err := patch(tests); err != nil {
+			fmt.Printf("applying testing patches failed %v", err)
 			return err
 		}
 	}
