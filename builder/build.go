@@ -203,9 +203,25 @@ func getGitVersion() error {
 	return nil
 }
 
+func restoreDefconfig() error {
+	if _, err := os.Stat("coreboot-" + corebootVer + "/defconfig.bak"); err != nil {
+		return nil
+	}
+	
+	if err := cp.Copy("coreboot-"+corebootVer+"/defconfig.bak", "coreboot-"+corebootVer+"/defconfig"); err != nil {
+			return err
+	}
+
+	return nil
+}
+
 func corebootDefconfig() error {
 	if *testing != 0 {
-		f, err := os.OpenFile("coreboot-"+corebootVer+"/defconfig", os.O_APPEND|os.O_WRONLY, 0644) 
+		if err := cp.Copy("coreboot-"+corebootVer+"/defconfig", "coreboot-"+corebootVer+"/defconfig.bak"); err != nil {
+			return err
+		}
+
+		f, err := os.OpenFile("coreboot-"+corebootVer+"/defconfig", os.O_APPEND|os.O_WRONLY, 0644)
 
 		if err != nil {
 			return err
@@ -214,7 +230,11 @@ func corebootDefconfig() error {
 		defer f.Close()
 
 		if _, err := f.WriteString("CONFIG_LINUXBOOT_UROOT_FILES=\"site-local/smi.ko:smi.ko\"\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM=y\nCONFIG_SPECIFIC_BOOTLOADER_CUSTOM_CMD=\"'insmod ./smi.ko'\""); err != nil {
-			return nil
+			return err
+		}
+	} else {
+		if err := restoreDefconfig(); err != nil {
+			return err
 		}
 	}
 
@@ -226,15 +246,6 @@ func corebootDefconfig() error {
 		return err
 	}
 
-	// sometimes cb build system behaves weirdly and skips u-root 
-	// generation if initramfs exists (even tho we changed something with the config)
-	cmd = exec.Command("make", "clean")
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Dir = "coreboot-" + corebootVer
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("cleaning failed %v\n", err) // "unicorn" case, no one ever saw it :D
-		return err
-	}
 	return nil
 }
 
@@ -408,31 +419,47 @@ func buildCoreboot() error {
 		return err
 	}
 
+	// sometimes cb build system behaves weirdly and skips u-root 
+	// generation if initramfs exists (even tho we changed something with the config)
+	cmd := exec.Command("make", "clean")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Dir = "coreboot-" + corebootVer
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("cleaning failed %v\n", err) // "unicorn" case, no one ever saw it :D
+		return err
+	}
+
+
+	// So at this point it is impossible to say how many patches are already applied,
+	// it could be that someone ran --build --testing 2 and now wants 3rd test case, or
+	// maybe clean build who knows. Safest way to deal with this (that I could think of
+	// at the time being) is to reset to origin/main and reapply base patches + (if testing
+	// is provided) additional ones.
+	if err := resetTree(); err != nil {
+		return err // another "unicorn" case
+	}
+
+	if err := patch(coreboot); err != nil {
+		fmt.Printf("applying patches failed %v", err)
+		return err
+	}
+	
 	if *testing != 0 {
 		if err := includeTestingMod(); err != nil {
 			return err
 		}
-		// So at this point it is impossible to say how many patches are already applied,
-		// it could be that someone ran --build --testing 2 and now wants 3rd test case, or
-		// maybe clean build who knows. Safest way to deal with this (that I could think of
-		// at the time being) is to reset to origin/main and reapply base patches + (if testing
-		// is provided) additional ones.
-		if err := resetTree(); err != nil {
-			return err // another "unicorn" case
-		}
-
-		if err := patch(coreboot); err != nil {
-			fmt.Printf("applying patches failed %v", err)
-			return err
-		}
-	
+			
 		if err := patch(tests); err != nil {
 			fmt.Printf("applying testing patches failed %v", err)
 			return err
 		}
+	} else { 
+		if err := corebootDefconfig(); err != nil {
+			return err
+		}
 	}
 
-	cmd := exec.Command("make", "-j"+strconv.Itoa(threads))
+	cmd = exec.Command("make", "-j"+strconv.Itoa(threads))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Dir = "coreboot-" + corebootVer
 	err := cmd.Run()
