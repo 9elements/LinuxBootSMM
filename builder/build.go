@@ -92,6 +92,9 @@ rootwait
 		"0005-fix-Kconfig-for-MM-payload-from-later-patches.patch",
 		"0006-drivers-payload_mm_interface-implement-no-unlock-MM-.patch",
 		"0007-mb-emulation-qemu-q35-hook-up-LinuxBoot-MM-to-SMI-ha.patch",
+		"0008-mb-intel-adlrvp-support-for-RVP-S-1-2.patch",
+		"0009-mb-intel-adlrvp-merged-support-for-RVP-S-M.patch",
+		"0010-mb-intel-adlrvp-support-for-RVP-S-2-2.patch",
 	}
 	patchesLinux = []string{
 		"0001-drivers-firmware-add-passing-MM-payload-info-from-co.patch",
@@ -99,7 +102,6 @@ rootwait
 		"0003-drivers-firmware-loader-for-kernel-owned-SMI-handler.patch",
 		"0004-driver-firmware-ACPI-management-in-SMI-handler.patch",
 	}
-	patchesTesting = []string{}
 )
 
 func patch(target Patch) error {

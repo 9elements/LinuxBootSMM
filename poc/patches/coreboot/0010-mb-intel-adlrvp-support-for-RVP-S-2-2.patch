@@ -1,12 +1,13 @@
-From e9ffb39baaf20b7c3934e990acf7c659a9ec458d Mon Sep 17 00:00:00 2001
+From 16a9e8058a70ae245eb20eb4537f01fa6eca71f2 Mon Sep 17 00:00:00 2001
 From: Michal Gorlas <michal.gorlas@9elements.com>
-Date: Thu, 22 May 2025 14:09:17 +0200
-Subject: [PATCH 10/10] mb/intel/adlrvp: support for RVP-S 2/2
+Date: Mon, 30 Jun 2025 14:02:00 +0200
+Subject: [PATCH] mb/intel/adlrvp: support for RVP-S 2/2
 
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
 ---
- src/mainboard/intel/adlrvp/ramstage.c       | 38 ++++++++++++---------
- src/soc/intel/common/block/smm/smihandler.c | 37 ++++++++++++++++++++
- 2 files changed, 58 insertions(+), 17 deletions(-)
+ src/mainboard/intel/adlrvp/ramstage.c       | 38 +++++++------
+ src/soc/intel/common/block/smm/smihandler.c | 61 +++++++++++++++++++--
+ 2 files changed, 78 insertions(+), 21 deletions(-)
 
 diff --git a/src/mainboard/intel/adlrvp/ramstage.c b/src/mainboard/intel/adlrvp/ramstage.c
 index fd8e20332b..0df97e3e44 100644
@@ -77,7 +78,7 @@ index fd8e20332b..0df97e3e44 100644
  
  void variant_devtree_update(void)
 diff --git a/src/soc/intel/common/block/smm/smihandler.c b/src/soc/intel/common/block/smm/smihandler.c
-index 59489a4f03..1a8953e04e 100644
+index 59489a4f03..793c1cc161 100644
 --- a/src/soc/intel/common/block/smm/smihandler.c
 +++ b/src/soc/intel/common/block/smm/smihandler.c
 @@ -20,6 +20,7 @@
@@ -88,7 +89,33 @@ index 59489a4f03..1a8953e04e 100644
  #include <smmstore.h>
  #include <soc/nvs.h>
  #include <soc/pci_devs.h>
-@@ -316,6 +317,35 @@ static void southbridge_smi_store(
+@@ -29,6 +30,7 @@
+ #include <soc/smbus.h>
+ #include <spi-generic.h>
+ #include <stdint.h>
++#include <payload_mm_interface.h>
+ 
+ /* SoC overrides. */
+ 
+@@ -61,6 +63,17 @@ __weak void mainboard_smi_espi_handler(void)
+ 	/* no-op */
+ }
+ 
++/* MM Payload interface overrides if enabled*/
++__weak int payload_mm_call_entrypoint(struct lb_entry_context context) {
++	return 1;
++}
++
++static struct lb_entry_context context = {
++	.command = 0,
++	.pm1_cnt = 0,
++	.acpi_base = 0,
++};
++
+ /* Common Functions */
+ 
+ static void *find_save_state(const struct smm_save_state_ops *save_state_ops,
+@@ -316,6 +329,30 @@ static void southbridge_smi_store(
  	}
  }
  
@@ -113,18 +140,49 @@ index 59489a4f03..1a8953e04e 100644
 +	/* drivers/mm_payload_interface/smi.c */
 +	ret = payload_mm_exec_interface(sub_command, reg_ebx);
 +
-+	/* if (ret) */
-+	/* 	ret |= 1 << 8; */
-+	/* else */
-+	/* 	ret |= 0 << 8; */
-+
 +	save_state_ops->set_reg(io_smi, RAX, ret);
 +}
 +
  __weak const struct gpio_lock_config *soc_gpio_lock_config(size_t *num)
  {
  	*num = 0;
-@@ -393,9 +423,16 @@ void smihandler_southbridge_apmc(
+@@ -373,26 +410,42 @@ void smihandler_southbridge_apmc(
+ 	const struct smm_save_state_ops *save_state_ops)
+ {
+ 	uint8_t reg8;
++	int mm_payload_ret;
++	context.pm1_cnt = pmc_read_pm1_control();
+ 
+ 	reg8 = apm_get_apmc();
+ 	switch (reg8) {
+ 	case APM_CNT_ACPI_DISABLE:
+-		pmc_disable_pm1_control(SCI_EN);
++		context.command = PAYLOAD_MM_ACPI_DISABLE;
++		mm_payload_ret = payload_mm_call_entrypoint(context);
++		if (mm_payload_ret)
++			pmc_disable_pm1_control(SCI_EN);
+ 		break;
+ 	case APM_CNT_ACPI_ENABLE:
+-		pmc_enable_pm1_control(SCI_EN);
++		context.command = PAYLOAD_MM_ACPI_ENABLE;
++		mm_payload_ret = payload_mm_call_entrypoint(context);
++		if (mm_payload_ret)
++			pmc_enable_pm1_control(SCI_EN);
+ 		break;
+ 	case APM_CNT_ELOG_GSMI:
+ 		if (CONFIG(ELOG_GSMI))
+ 			southbridge_smi_gsmi(save_state_ops);
+ 		break;
+ 	case APM_CNT_SMMSTORE:
+-		if (CONFIG(SMMSTORE))
+-			southbridge_smi_store(save_state_ops);
++		if (CONFIG(SMMSTORE)) {
++			context.command = PAYLOAD_MM_SMM_STORE;
++			mm_payload_ret = payload_mm_call_entrypoint(context);
++			if (mm_payload_ret)
++				southbridge_smi_store(save_state_ops);
++		}
+ 		break;
  	case APM_CNT_FINALIZE:
  		finalize();
  		break;
@@ -135,12 +193,6 @@ index 59489a4f03..1a8953e04e 100644
  	}
  
  	mainboard_smi_apmc(reg8);
-+
-+	if (CONFIG(PAYLOAD_MM_INTERFACE))
-+		payload_mm_call_entrypoint();
- }
- 
- void smihandler_southbridge_pm1(
 -- 
 2.49.0
 
