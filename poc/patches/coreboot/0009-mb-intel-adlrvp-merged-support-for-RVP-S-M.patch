@@ -1,0 +1,1495 @@
+From b5a25e0e3f0aef20b981a0fff538d163ff403046 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Mon, 19 May 2025 17:57:18 +0200
+Subject: [PATCH 09/10] mb/intel/adlrvp: merged support for RVP-S/M
+
+Signed-off-by: Michal Gorlas <michal.gorlas@9elements.com>
+---
+ src/mainboard/intel/adlrvp/Kconfig            |  53 ++-
+ src/mainboard/intel/adlrvp/Kconfig.name       |  13 +-
+ src/mainboard/intel/adlrvp/Makefile.mk        |   9 +-
+ src/mainboard/intel/adlrvp/devicetree_s.cb    |  78 ++++
+ src/mainboard/intel/adlrvp/early_gpio_s.c     |  43 +++
+ src/mainboard/intel/adlrvp/gpio_adl_s.c       | 356 ++++++++++++++++++
+ src/mainboard/intel/adlrvp/gpio_rpl_s.c       | 356 ++++++++++++++++++
+ .../intel/adlrvp/include/baseboard/variants.h |   4 +
+ src/mainboard/intel/adlrvp/mainboard.c        |   8 +-
+ src/mainboard/intel/adlrvp/memory.c           |  21 ++
+ .../intel/adlrvp/romstage_fsp_params.c        |   2 +
+ src/mainboard/intel/adlrvp/spd/Makefile.mk    |   4 +-
+ .../intel/adlrvp/spd/adlrvp_m_lp4.spd.hex     |  32 ++
+ .../intel/adlrvp/spd/adlrvp_m_lp5.spd.hex     |  32 ++
+ .../adlrvp/variants/adlrvp_m/overridetree.cb  |   3 +
+ .../variants/adlrvp_m_ext_ec/overridetree.cb  |  34 ++
+ .../overridetree.cb                           |  81 ++++
+ .../adlrvp_s_ddr5_udimm_1dpc/overridetree.cb  |  81 ++++
+ 18 files changed, 1197 insertions(+), 13 deletions(-)
+ create mode 100644 src/mainboard/intel/adlrvp/devicetree_s.cb
+ create mode 100644 src/mainboard/intel/adlrvp/early_gpio_s.c
+ create mode 100644 src/mainboard/intel/adlrvp/gpio_adl_s.c
+ create mode 100644 src/mainboard/intel/adlrvp/gpio_rpl_s.c
+ create mode 100644 src/mainboard/intel/adlrvp/spd/adlrvp_m_lp4.spd.hex
+ create mode 100644 src/mainboard/intel/adlrvp/spd/adlrvp_m_lp5.spd.hex
+ create mode 100644 src/mainboard/intel/adlrvp/variants/adlrvp_m/overridetree.cb
+ create mode 100644 src/mainboard/intel/adlrvp/variants/adlrvp_m_ext_ec/overridetree.cb
+ create mode 100644 src/mainboard/intel/adlrvp/variants/adlrvp_rpl_s_ddr5_udimm_1dpc/overridetree.cb
+ create mode 100644 src/mainboard/intel/adlrvp/variants/adlrvp_s_ddr5_udimm_1dpc/overridetree.cb
+
+diff --git a/src/mainboard/intel/adlrvp/Kconfig b/src/mainboard/intel/adlrvp/Kconfig
+index db5e2d9f13..f5305a7ccd 100644
+--- a/src/mainboard/intel/adlrvp/Kconfig
++++ b/src/mainboard/intel/adlrvp/Kconfig
+@@ -1,5 +1,3 @@
+-## SPDX-License-Identifier: GPL-2.0-only
+-
+ config BOARD_INTEL_ADLRVP_COMMON
+ 	def_bool n
+ 	select BOARD_ROMSIZE_KB_32768
+@@ -18,7 +16,7 @@ config BOARD_INTEL_ADLRVP_COMMON
+ 	select HAVE_SPD_IN_CBFS
+ 	select MAINBOARD_HAS_CHROMEOS
+ 	select SOC_INTEL_COMMON_BLOCK_IPU
+-	select SOC_INTEL_ENABLE_USB4_PCIE_RESOURCES
++	select SOC_INTEL_ENABLE_USB4_PCIE_RESOURCES if !SOC_INTEL_ALDERLAKE_PCH_S
+ 
+ config BOARD_INTEL_ADLRVP_P
+ 	select BOARD_INTEL_ADLRVP_COMMON
+@@ -64,6 +62,39 @@ config BOARD_INTEL_ADLRVP_P_MCHP
+ 	select INTEL_LPSS_UART_FOR_CONSOLE
+ 	select SOC_INTEL_ALDERLAKE_PCH_P
+ 
++config BOARD_INTEL_ADLRVP_M
++	select BOARD_INTEL_ADLRVP_COMMON
++	select DRIVERS_UART_8250IO
++	select MAINBOARD_USES_IFD_EC_REGION
++	select SOC_INTEL_ALDERLAKE_PCH_M
++
++config BOARD_INTEL_ADLRVP_M_EXT_EC
++	select BOARD_INTEL_ADLRVP_COMMON
++	select DRIVERS_INTEL_PMC
++	select FW_CONFIG
++	select FW_CONFIG_SOURCE_CHROMEEC_CBI
++	select INTEL_LPSS_UART_FOR_CONSOLE
++	select MAINBOARD_HAS_TPM2
++	select SOC_INTEL_ALDERLAKE_PCH_M
++	select SPI_TPM
++	select TPM_GOOGLE_CR50
++
++config BOARD_INTEL_ADLRVP_S_DDR5_UDIMM_1DPC
++	select BOARD_INTEL_ADLRVP_COMMON
++	select DRIVERS_UART_8250IO
++	select MAINBOARD_USES_IFD_EC_REGION
++	select MAINBOARD_USES_IFD_GBE_REGION
++	select SOC_INTEL_ALDERLAKE_PCH_S
++	select INTEL_CAR_NEM
++
++config BOARD_INTEL_ADLRVP_RPL_S_DDR5_UDIMM_1DPC
++	select BOARD_INTEL_ADLRVP_COMMON
++	select DRIVERS_UART_8250IO
++	select MAINBOARD_USES_IFD_EC_REGION
++	select MAINBOARD_USES_IFD_GBE_REGION
++	select SOC_INTEL_RAPTORLAKE_PCH_S
++	select INTEL_GMA_HAVE_VBT
++
+ config BOARD_INTEL_ADLRVP_N
+ 	select BOARD_INTEL_ADLRVP_COMMON
+ 	select DRIVERS_UART_8250IO
+@@ -103,17 +134,22 @@ config MAINBOARD_DIR
+ 	default "intel/adlrvp"
+ 
+ config VARIANT_DIR
++	default "adlrvp_s_ddr5_udimm_1dpc" if BOARD_INTEL_ADLRVP_S_DDR5_UDIMM_1DPC
++	default "adlrvp_rpl_s_ddr5_udimm_1dpc" if BOARD_INTEL_ADLRVP_RPL_S_DDR5_UDIMM_1DPC
+ 	default "adlrvp_p" if BOARD_INTEL_ADLRVP_P
+ 	default "adlrvp_p_ext_ec" if BOARD_INTEL_ADLRVP_P_EXT_EC
+ 	default "adlrvp_rpl" if BOARD_INTEL_ADLRVP_RPL
+ 	default "adlrvp_rpl_ext_ec" if BOARD_INTEL_ADLRVP_RPL_EXT_EC
+ 	default "adlrvp_p_mchp" if BOARD_INTEL_ADLRVP_P_MCHP
++	default "adlrvp_m" if BOARD_INTEL_ADLRVP_M
++	default "adlrvp_m_ext_ec" if BOARD_INTEL_ADLRVP_M_EXT_EC
+ 	default "adlrvp_n" if BOARD_INTEL_ADLRVP_N
+ 	default "adlrvp_n_ext_ec" if BOARD_INTEL_ADLRVP_N_EXT_EC
+ 
+ config GBB_HWID
+ 	string
+ 	depends on CHROMEOS
++	default "ADLRVPM TEST 4471" if BOARD_INTEL_ADLRVP_M || BOARD_INTEL_ADLRVP_M_EXT_EC
+ 	default "ADLRVPN TEST 7673" if BOARD_INTEL_ADLRVP_N || BOARD_INTEL_ADLRVP_N_EXT_EC
+ 	default "ADLRVPP TEST 2418"
+ 
+@@ -129,7 +165,9 @@ config MAINBOARD_FAMILY
+ 	default "Intel_adlrvp"
+ 
+ config DEVICETREE
++	default "devicetree_m.cb" if BOARD_INTEL_ADLRVP_M || BOARD_INTEL_ADLRVP_M_EXT_EC
+ 	default "devicetree_n.cb" if BOARD_INTEL_ADLRVP_N || BOARD_INTEL_ADLRVP_N_EXT_EC
++	default "devicetree_s.cb" if BOARD_INTEL_ADLRVP_S_DDR5_UDIMM_1DPC || BOARD_INTEL_ADLRVP_RPL_S_DDR5_UDIMM_1DPC
+ 	default "devicetree.cb"
+ 
+ config OVERRIDE_DEVICETREE
+@@ -137,7 +175,8 @@ config OVERRIDE_DEVICETREE
+ 
+ choice
+ 	prompt "ON BOARD EC"
+-	default ADL_CHROME_EC if BOARD_INTEL_ADLRVP_P_EXT_EC || BOARD_INTEL_ADLRVP_P_MCHP || BOARD_INTEL_ADLRVP_N_EXT_EC || BOARD_INTEL_ADLRVP_RPL_EXT_EC
++	default ADL_INTEL_EC if BOARD_INTEL_ADLRVP_P || BOARD_INTEL_ADLRVP_M || BOARD_INTEL_ADLRVP_N || BOARD_INTEL_ADLRVP_RPL || BOARD_INTEL_ADLRVP_S_DDR5_UDIMM_1DPC || BOARD_INTEL_ADLRVP_RPL_S_DDR5_UDIMM_1DPC
++	default ADL_CHROME_EC if BOARD_INTEL_ADLRVP_P_EXT_EC || BOARD_INTEL_ADLRVP_M_EXT_EC || BOARD_INTEL_ADLRVP_P_MCHP || BOARD_INTEL_ADLRVP_N_EXT_EC || BOARD_INTEL_ADLRVP_RPL_EXT_EC
+ 	help
+ 	  This option allows you to select the on board EC to use.
+ 	  Select whether the board has Intel EC or Chrome EC
+@@ -159,21 +198,21 @@ config VBOOT
+ 	select VBOOT_LID_SWITCH
+ 	select VBOOT_MOCK_SECDATA if BOARD_INTEL_ADLRVP_P_EXT_EC || BOARD_INTEL_ADLRVP_N_EXT_EC
+ 	select EC_GOOGLE_CHROMEEC_SWITCHES if ADL_CHROME_EC
+-	select VBOOT_EARLY_EC_SYNC if BOARD_INTEL_ADLRVP_N_EXT_EC
++	select VBOOT_EARLY_EC_SYNC if BOARD_INTEL_ADLRVP_M_EXT_EC || BOARD_INTEL_ADLRVP_N_EXT_EC
+ 
+ config UART_FOR_CONSOLE
+ 	int
+ 	default 0
+ 
+ config DRIVER_TPM_SPI_BUS
+-	default 0x2 if BOARD_INTEL_ADLRVP_RPL_EXT_EC
++	default 0x2 if BOARD_INTEL_ADLRVP_RPL_EXT_EC || BOARD_INTEL_ADLRVP_M_EXT_EC
+ 
+ config USE_PM_ACPI_TIMER
+ 	default n if BOARD_INTEL_ADLRVP_N_EXT_EC || BOARD_INTEL_ADLRVP_N
+ 
+ config TPM_TIS_ACPI_INTERRUPT
+ 	int
+-	default 67 if BOARD_INTEL_ADLRVP_RPL_EXT_EC # GPE0_DW2_3 (GPP_E3)
++	default 67 if BOARD_INTEL_ADLRVP_RPL_EXT_EC || BOARD_INTEL_ADLRVP_M_EXT_EC # GPE0_DW2_3 (GPP_E3)
+ 
+ config GEN3_EXTERNAL_CLOCK_BUFFER
+ 	bool
+diff --git a/src/mainboard/intel/adlrvp/Kconfig.name b/src/mainboard/intel/adlrvp/Kconfig.name
+index 63e4ce1aad..77006899fd 100644
+--- a/src/mainboard/intel/adlrvp/Kconfig.name
++++ b/src/mainboard/intel/adlrvp/Kconfig.name
+@@ -1,4 +1,5 @@
+-## SPDX-License-Identifier: GPL-2.0-only
++config BOARD_INTEL_ADLRVP_S_DDR5_UDIMM_1DPC
++	bool "Alderlake-S RVP DDR5 UDIMM 1DPC"
+ 
+ config BOARD_INTEL_ADLRVP_P
+ 	bool "Alderlake-P RVP"
+@@ -9,6 +10,12 @@ config BOARD_INTEL_ADLRVP_P_EXT_EC
+ config BOARD_INTEL_ADLRVP_P_MCHP
+ 	bool "Alderlake-P RVP with Microchip EC"
+ 
++config BOARD_INTEL_ADLRVP_M
++	bool "Alderlake-M RVP"
++
++config BOARD_INTEL_ADLRVP_M_EXT_EC
++	bool "Alderlake-M RVP with Chrome EC"
++
+ config BOARD_INTEL_ADLRVP_N
+ 	bool "Alderlake-N RVP"
+ 
+@@ -20,3 +27,7 @@ config BOARD_INTEL_ADLRVP_RPL
+ 
+ config BOARD_INTEL_ADLRVP_RPL_EXT_EC
+ 	bool "Raptorlake silicon with Alderlake-P RVP and Chrome EC"
++
++config BOARD_INTEL_ADLRVP_RPL_S_DDR5_UDIMM_1DPC
++	bool "Raptorlake silicon with Alderlake-S RVP DDR5 UDIMM 1DPC"
++
+diff --git a/src/mainboard/intel/adlrvp/Makefile.mk b/src/mainboard/intel/adlrvp/Makefile.mk
+index b63953c0e0..7891609cb9 100644
+--- a/src/mainboard/intel/adlrvp/Makefile.mk
++++ b/src/mainboard/intel/adlrvp/Makefile.mk
+@@ -4,9 +4,16 @@ subdirs-y += spd
+ 
+ bootblock-y += bootblock.c
+ bootblock-$(CONFIG_CHROMEOS) += chromeos.c
+-ifeq ($(CONFIG_SOC_INTEL_ALDERLAKE_PCH_N),y)
++ifeq ($(CONFIG_SOC_INTEL_ALDERLAKE_PCH_M),y)
++bootblock-y += early_gpio_m.c
++ramstage-y += gpio_m.c
++else ifeq ($(CONFIG_SOC_INTEL_ALDERLAKE_PCH_N),y)
+ bootblock-y += early_gpio_n.c
+ ramstage-y += gpio_n.c
++else ifeq ($(CONFIG_SOC_INTEL_ALDERLAKE_PCH_S),y)
++bootblock-y += early_gpio_s.c
++#ramstage-y += gpio_rpl_s_bkc.c
++ramstage-y += gpio_rpl_s.c
+ else
+ bootblock-y += early_gpio.c
+ ramstage-y += gpio.c
+diff --git a/src/mainboard/intel/adlrvp/devicetree_s.cb b/src/mainboard/intel/adlrvp/devicetree_s.cb
+new file mode 100644
+index 0000000000..f2268ed373
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/devicetree_s.cb
+@@ -0,0 +1,78 @@
++chip soc/intel/alderlake
++
++	register "serial_io_i2c_mode" = "{
++		[PchSerialIoIndexI2C0] = PchSerialIoPci,
++		[PchSerialIoIndexI2C1] = PchSerialIoPci,
++		[PchSerialIoIndexI2C2] = PchSerialIoPci,
++		[PchSerialIoIndexI2C3] = PchSerialIoPci,
++		[PchSerialIoIndexI2C4] = PchSerialIoDisabled,
++		[PchSerialIoIndexI2C5] = PchSerialIoPci,
++	}"
++
++	register "serial_io_gspi_mode" = "{
++		[PchSerialIoIndexGSPI0] = PchSerialIoPci,
++		[PchSerialIoIndexGSPI1] = PchSerialIoPci,
++		[PchSerialIoIndexGSPI2] = PchSerialIoDisabled,
++		[PchSerialIoIndexGSPI3] = PchSerialIoDisabled,
++	}"
++
++	register "serial_io_gspi_cs_mode" = "{
++		[PchSerialIoIndexGSPI0] = 0,
++		[PchSerialIoIndexGSPI1] = 1,
++		[PchSerialIoIndexGSPI2] = 0,
++		[PchSerialIoIndexGSPI3] = 0,
++	}"
++
++	register "serial_io_gspi_cs_state" = "{
++		[PchSerialIoIndexGSPI0] = 0,
++		[PchSerialIoIndexGSPI1] = 0,
++		[PchSerialIoIndexGSPI2] = 0,
++		[PchSerialIoIndexGSPI3] = 0,
++	}"
++
++	register "serial_io_uart_mode" = "{
++		[PchSerialIoIndexUART0] = PchSerialIoSkipInit,
++		[PchSerialIoIndexUART1] = PchSerialIoDisabled,
++		[PchSerialIoIndexUART2] = PchSerialIoDisabled,
++	}"
++
++	# Intel Common SoC Config
++	register "common_soc_config" = "{
++		.gspi[1] = {
++			.speed_mhz = 1,
++			.early_init = 1,
++		},
++		.i2c[0] = {
++			.speed = I2C_SPEED_FAST,
++		},
++		.i2c[1] = {
++			.speed = I2C_SPEED_FAST,
++		},
++		.i2c[2] = {
++			.speed = I2C_SPEED_FAST,
++		},
++		.i2c[3] = {
++			.speed = I2C_SPEED_FAST,
++		},
++		.i2c[5] = {
++			.speed = I2C_SPEED_FAST,
++		},
++	}"
++
++	device domain 0 on
++		device ref sata on
++			register "sata_salp_support" = "1"
++			register "sata_ports_enable" = "{
++				[4] = 1,
++				[5] = 1,
++				[6] = 1,
++				[7] = 1,
++			}"
++
++			register "sata_ports_dev_slp" = "{
++				[6] = 1,
++				[7] = 1,
++			}"
++		end
++	end
++end
+diff --git a/src/mainboard/intel/adlrvp/early_gpio_s.c b/src/mainboard/intel/adlrvp/early_gpio_s.c
+new file mode 100644
+index 0000000000..59bac31cae
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/early_gpio_s.c
+@@ -0,0 +1,43 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <baseboard/gpio.h>
++#include <baseboard/variants.h>
++#include <soc/gpio.h>
++
++/* Early pad configuration in bootblock */
++static const struct pad_config early_gpio_table[] = {
++	PAD_CFG_GPO(GPP_H16, 1, DEEP), // CPU M.2 SSD Slot Power enable
++	PAD_CFG_GPO(GPP_E5, 1, PLTRST),// CPU PCIE Graphics (PEG) Power Enable
++	PAD_CFG_GPO(GPP_E1, 1, DEEP),  // PCH PCIE Slot 1 - X4 Connector Power enable
++	PAD_CFG_GPO(GPP_H11, 1, DEEP), // PCH PCIE Slot 2 - X4 Connector Power enable
++	PAD_CFG_GPO(GPP_B21, 1, DEEP), // PCH PCIE Slot 3 - X2 Connector Power enable
++	PAD_CFG_GPO(GPP_K11, 1, DEEP), // PCH M.2 SSD Slot 1 Power enable
++	PAD_CFG_GPO(GPP_B22, 1, DEEP), // PCH M.2 SSD Slot 2 Power enable,
++	PAD_CFG_GPO(GPP_K2, 1, DEEP),  // PCH M.2 SSD Slot 3 Power enable
++	PAD_CFG_GPO(GPP_E2, 1, DEEP),  // CPU PCIE (PEG) Slot 1 Reset
++	PAD_CFG_GPO(GPP_F11, 1, DEEP), // PCH PCIE Slot 1 - X4 Connector Reset
++	PAD_CFG_GPO(GPP_F12, 1, DEEP), // PCH PCIE Slot 2 - X4 Connector Reset
++	PAD_CFG_GPO(GPP_F13, 1, DEEP), // PCH PCIE Slot 3 - X2 Connector Reset
++	PAD_CFG_GPO(GPP_F18, 1, DEEP), // CPU M.2 SSD Reset
++	PAD_CFG_GPO(GPP_C10, 1, DEEP), // PCH M.2 SSD Slot 1 Reset
++	PAD_CFG_GPO(GPP_F16, 1, DEEP), // PCH M.2 SSD Slot 2 Reset
++	PAD_CFG_GPO(GPP_B6, 1, DEEP),  // PCH M.2 SSD Slot 3 Reset
++
++	PAD_CFG_NF(GPP_C0, NONE, DEEP, NF1), // SMBCLK ==> SMB CLK Resume (PCI Devices)
++	PAD_CFG_NF(GPP_C1, NONE, DEEP, NF1), // SMBDATA ==> SMB DATA Resume (PCI Devices)
++};
++
++static const struct pad_config early_uart_gpio_table[] = {
++	// UART2 is connected to USB2.0 Micro Debug Port
++	// and therefore need's to be initialized early on
++	PAD_CFG_NF(GPP_C20, NONE, DEEP, NF1), // UART2_RXD
++	PAD_CFG_NF(GPP_C21, NONE, DEEP, NF1), // UART2_TXD
++};
++
++void variant_configure_early_gpio_pads(void)
++{
++	if (CONFIG(INTEL_LPSS_UART_FOR_CONSOLE))
++		gpio_configure_pads(early_uart_gpio_table, ARRAY_SIZE(early_uart_gpio_table));
++
++	gpio_configure_pads(early_gpio_table, ARRAY_SIZE(early_gpio_table));
++}
+diff --git a/src/mainboard/intel/adlrvp/gpio_adl_s.c b/src/mainboard/intel/adlrvp/gpio_adl_s.c
+new file mode 100644
+index 0000000000..04e465065e
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/gpio_adl_s.c
+@@ -0,0 +1,356 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <baseboard/gpio.h>
++#include <baseboard/variants.h>
++#include <commonlib/helpers.h>
++#include <vendorcode/google/chromeos/chromeos.h>
++
++/* Pad configuration in ramstage
++ * GPIO Community consists of several GPIO Groups
++ * GPIO Group consists of several GPIO PADs/Pins
++ * Reset reference for Deep sleep well Pads is PWROK
++ * Reset reference for Primary well Pads is RSMRST
++ * GPP: General Purpose Primary Well
++ * GPD: General Purpose Deep Sleep Well
++ */
++static const struct pad_config gpio_table[] = {
++	//TODO clkreq pins for CPU root ports are implemented via virtual wires
++
++	/* ------- GPIO Community 0 ------- */
++
++	/* ------- GPIO Group GPP_I ------- */
++	PAD_CFG_NF(GPP_I0, NONE, RSMRST, NF1), // EXT_PWR_GATE
++	PAD_CFG_NF(GPP_I1, NONE, DEEP, NF1), // DDSP_HPD1/DISP_MISC1 ==> HDMI Hot Plug Detect
++	PAD_CFG_NF(GPP_I2, NONE, DEEP, NF1), // DDSP_HPD2/DISP_MISC2 ==> Display-Port Hot Plug Detect
++	PAD_CFG_NF(GPP_I3, NONE, DEEP, NF1), // DDSP_HPD3/DISP_MISC3 ==> HDMI Hot Plug Detect
++	PAD_CFG_NF(GPP_I4, NONE, DEEP, NF1), // DDSP_HPD4/DISP_MISC4 ==> Display-Port Hot Plug Detect
++	PAD_NC(GPP_I5, NONE), // DDPB_CTRLCLK
++	PAD_NC(GPP_I6, NONE), // DDPB_CTRLDATA
++	PAD_NC(GPP_I7, NONE), // DDPC_CTRLCLK
++	PAD_NC(GPP_I8, NONE), // DDPC_CTRLDATA
++	PAD_CFG_NF(GPP_I9, NONE, DEEP, NF1),  // GSPI0_CS1 ==> header
++	PAD_CFG_NF(GPP_I10, NONE, DEEP, NF2), // GSPI1_CS1/TIME_SYNC1
++	PAD_CFG_NF(GPP_I11, NONE, DEEP, NF2), // USB_OC4/I2C4_SDA ==> header
++	PAD_CFG_NF(GPP_I12, NONE, DEEP, NF2), // USB_OC5/I2C4_SCL ==> header
++	PAD_CFG_NF(GPP_I13, NONE, DEEP, NF1), // USB_OC6/I2C5_SDA ==> Type-C backpanel connector
++	PAD_CFG_NF(GPP_I14, NONE, DEEP, NF2), // USB_OC7/I2C5_SCL ==> header
++	PAD_CFG_NF(GPP_I15, NONE, DEEP, NF1), // GSPI0_CS0 ==> header
++	PAD_CFG_NF(GPP_I16, NONE, DEEP, NF1), // GSPI0_CLK ==> header
++	PAD_CFG_NF(GPP_I17, NONE, DEEP, NF1), // GSPI0_MISO ==> header
++	PAD_CFG_NF(GPP_I18, NONE, DEEP, NF1), // GSPI0_MOSI ==> header
++	PAD_CFG_NF(GPP_I19, NONE, DEEP, NF1), // GSPI1_CS0 ==> header
++	PAD_CFG_NF(GPP_I20, NONE, DEEP, NF1), // GSPI1_CLK ==> header
++	PAD_CFG_NF(GPP_I21, NONE, DEEP, NF1), // GSPI1_MISO ==> header
++	PAD_CFG_NF(GPP_I22, NONE, DEEP, NF1), // GSPI1_MOSI ==> header
++
++	/* ------- GPIO Group GPP_R ------- */
++	PAD_CFG_NF(GPP_R0, NONE, DEEP, NF1), // HDA_BCLK/HDACPU_BCLK ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R1, NONE, DEEP, NF1), // HDA_SYNC ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R2, NONE, DEEP, NF1), // HDA_SDO/HDACPU_SDO ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R3, NONE, DEEP, NF1), // HDA_SDI0/HDACPU_SDI ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R4, NONE, DEEP, NF1), // HDA_RST ==> Audio header
++	PAD_CFG_NF(GPP_R5, NONE, DEEP, NF1), // HDA_SDI1 ==> Audio header
++	PAD_NC(GPP_R6, NONE), // GPP_R_6
++	PAD_NC(GPP_R7, NONE), // GPP_R_7
++	PAD_NC(GPP_R8, NONE), // GPP_R_8
++	PAD_CFG_NF(GPP_R9, NONE, DEEP, NF1), // DDSP_HPDA/DISP_MISCA ==> e-DP Hot Plug Detect
++	PAD_CFG_GPO(GPP_R10, 1, PLTRST),     // DDSP_HPDB/DISP_MISCB ==> PCH Codec Power Enable
++	PAD_CFG_GPO(GPP_R11, 1, PLTRST),     // DDSP_HPDC/DISP_MISCC ==> SATA Power Enable
++
++	PAD_CFG_NF(GPP_R12, NONE, DEEP, NF2), // ISH_SPI_CS/DDP3_CTRLCLK/GSPI2_CS0 ==> HDMI SCL
++	PAD_CFG_NF(GPP_R13, NONE, DEEP, NF2), // ISH_SPI_CLK/DDP3_CTRLDATA/GSPI2_CLK ==> HDMI SDA
++	PAD_CFG_NF(GPP_R14, NONE, DEEP, NF2), // ISH_SPI_MISO/DDP4_CTRLCLK/GSPI2_MISO ==> Display Port Auxiliary SCL
++	PAD_CFG_NF(GPP_R15, NONE, DEEP, NF2), // ISH_SPI_MOSI/DDP4_CTRLDATA/GSPI2_MOSI ==> Display Port Auxiliary SDA
++	PAD_CFG_NF(GPP_R16, NONE, DEEP, NF1), // DDP1_CTRLCLK ==> HDMI SCL
++	PAD_CFG_NF(GPP_R17, NONE, DEEP, NF1), // DDP1_CTRLDATA ==> HDMI SDA
++	PAD_CFG_NF(GPP_R18, NONE, DEEP, NF1), // DDP2_CTRLCLK ==> Display Port Auxiliary SCL
++	PAD_CFG_NF(GPP_R19, NONE, DEEP, NF1), // DDP2_CTRLDATA ==> Display Port Auxiliary SDA
++	PAD_CFG_GPO(GPP_R20, 1, PLTRST), // DDPA_CTRLCLK ==> LAN Power Enable
++	PAD_CFG_GPO(GPP_R21, 0, PLTRST), // DDPA_CTRLDATA ==> Touch Panel Power Enable
++
++	/* ------- GPIO Group GPP_J ------- */
++	PAD_CFG_NF(GPP_J0, NONE, DEEP, NF1), // CNV_PA_BLANKING ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J1, NONE, DEEP, NF1), // CPU_C10_GATE ==> C10_GATE Embedded Controller
++	PAD_CFG_NF(GPP_J2, NONE, DEEP, NF1), // CNV_BRI_DT/UART0_RTS ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J3, NONE, DEEP, NF1), // CNV_BRI_RSP/UART0_RXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J4, NONE, DEEP, NF1), // CNV_RGI_DT/UART0_TXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J5, NONE, DEEP, NF1), // CNV_RGI_RSP/UART0_CTS ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J6, NONE, DEEP, NF1), // CNV_MFUART2_RXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J7, NONE, DEEP, NF1), // CNV_MFUART2_TXD ==> CNVi M.2 (WiFi/BT)
++
++	PAD_CFG_NF(GPP_J8, NONE, DEEP, NF1), // SRCCLKREQ16 ==> jumper (default HIGH if jumper is not connected)
++	PAD_CFG_NF(GPP_J9, NONE, DEEP, NF1), // SRCCLKREQ17 (not connected)
++	PAD_CFG_NF(GPP_J10, NONE, DEEP, NF1), // BSSB_LS_RX ==> Backpanel Type-C Connector + header
++	PAD_CFG_NF(GPP_J11, NONE, DEEP, NF1), // BSSB_LS_TX ==> Backpanel Type-C Connector + header
++
++	/* ------- GPIO Community 1 ------- */
++
++	/* ------- GPIO Group GPP_B ------- */
++	PAD_CFG_NF(GPP_B0, NONE, DEEP, NF1), // PCIE_LNK_DOWN ==> PCIE Link Down LED
++	PAD_CFG_NF(GPP_B1, NONE, DEEP, NF1), // ISH_UART0_RTS/GSPI2_CS1 ==> header
++	PAD_CFG_GPI_SCI(GPP_B2, NATIVE, DEEP, EDGE_SINGLE, INVERT), // VRALERT ==> M.2 UART Wake
++	PAD_CFG_NF(GPP_B3, NONE, DEEP, NF1), // CPU_GP2 ==> M.2 Bluetooth RF-KILL
++	//TODO 618659 indicates this pad is not SMI capable
++	//_PAD_CFG_STRUCT(GPP_B4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(EDGE_SINGLE) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // CPU_GP3 ==> EC SMI
++	PAD_CFG_NF(GPP_B5, NONE, DEEP, NF2), // SX_EXIT_HOLDOFF/ISH_GP6 ==> ISH sensor header
++	//PAD_CFG_GPO(GPP_B6, 1, PLTRST), // CLKOUT_48 ==> M.2 SSD Slot 3 Reset
++	PAD_CFG_NF(GPP_B7, NONE, DEEP, NF1), // ISH_GP7 ==> ISH header
++	PAD_CFG_NF(GPP_B8, NONE, DEEP, NF1), // ISH_GP0 ==> ISH header
++	PAD_CFG_NF(GPP_B9, NONE, DEEP, NF1), // ISH_GP1 ==> ISH header
++	PAD_CFG_NF(GPP_B10, NONE, DEEP, NF1), // ISH_GP2 ==> ISH header
++	PAD_NC(GPP_B11, NONE), // GPP_B_11 ==> Audio header
++	PAD_CFG_NF(GPP_B12, NONE, DEEP, NF1), // SLP_S0 ==> EC Sleep S0
++	PAD_CFG_NF(GPP_B13, NONE, DEEP, NF1), // PLTRST ==> various devices PLTRST Pins/Pads
++	PAD_CFG_NF(GPP_B14, NONE, DEEP, NF1), // SPKR ==> Speaker/Buzzer
++	PAD_CFG_NF(GPP_B15, NONE, DEEP, NF1), // ISH_GP3 ==> ISH header
++	PAD_CFG_NF(GPP_B16, NONE, DEEP, NF1), // ISH_GP4 ==> ISH header
++	PAD_CFG_NF(GPP_B17, NONE, DEEP, NF1), // ISH_GP5 ==> ISH header
++	PAD_CFG_NF(GPP_B18, NONE, DEEP, NF1), // PMCALERT ==> USB Type-C Power Delivery I2C Alert
++	PAD_CFG_GPO(GPP_B19, 1, PLTRST), // RSVD ==> M.2 WiFi RF-KILL
++	//TODO check direction
++	//PAD_CFG_GPO(GPP_B20, 1, PLTRST), // RSVD ==> USB Type-C Power Delivery Presence Detect
++	PAD_CFG_GPO(GPP_B21, 1, PLTRST), // GPP_B21 ==> PCIE_SLOT_3_PWREN
++	PAD_CFG_GPO(GPP_B22, 1, PLTRST), // GPP_B22 ==> M.2_PCH_SSD_2_PWREN
++	PAD_CFG_NF(GPP_B23, NONE, DEEP, NF1), // SML1ALERT/PCHHOT ==> TP (Testpoint)
++
++	///* ------- GPIO Group GPP_G ------- */
++	//TODO check G0, G1, G7 use
++	//PAD_CFG_GPO(GPP_G0, 0, PLTRST); // GPP_G0 ==> ?
++	//PAD_CFG_GPO(GPP_G1, 1, PLTRST); // GPP_G1 ==> ?
++	PAD_CFG_NF(GPP_G2, DN_20K, DEEP, NF1), // DNX_FORCE_RELOAD
++	_PAD_CFG_STRUCT(GPP_G3, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0), // GPP_G3 ==> GMII_MDC_0
++	_PAD_CFG_STRUCT(GPP_G4, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF), 0), // GPP_G4 ==> GMII_MDIO_0
++	PAD_CFG_NF(GPP_G5, NONE, DEEP, NF1), // SLP_DRAM ==> SLP_DRAM_N
++	PAD_CFG_GPO(GPP_G6, 0, DEEP), // GPP_G6 ==> CNVi Enable (Active LOW)
++	//_PAD_CFG_STRUCT(GPP_G7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // GPP_G7 ==> ?
++
++	///* ------- GPIO Group GPP_H ------- */
++	PAD_CFG_GPI(GPP_H0, NONE, DEEP), // GPP_H0 ==> jumper (HIGH if jumper is not connected)
++	PAD_CFG_GPI(GPP_H1, NONE, PLTRST), // GPP_H1 ==> USB Type-C Power Delivery Alert
++	//PAD_CFG_GPI_SCI(GPP_H2, NONE, RSMRST, EDGE_SINGLE, INVERT), // SRCCLKREQ8 ==> M.2 WLAN PEWAKE
++	PAD_CFG_NF(GPP_H3, NONE, DEEP, NF1), // SRCCLKREQ9 ==> SRCCLKREQ M.2 WLAN
++	PAD_CFG_NF(GPP_H4, NONE, DEEP, NF1), // SRCCLKREQ10 ==> SRCCLKREQ M.2 SSD 3
++	PAD_CFG_NF(GPP_H5, NONE, DEEP, NF1), // SRCCLKREQ11 ==> SRCCLKREQ CPU M.2 SSD
++	PAD_CFG_NF(GPP_H6, NONE, DEEP, NF1), // SRCCLKREQ12 ==> SRCCLKREQ M.2 SSD
++	PAD_CFG_NF(GPP_H7, NONE, DEEP, NF1), // SRCCLKREQ13 ==> SRCCLKREQ M.2 SSD 2
++	PAD_CFG_NF(GPP_H8, NONE, DEEP, NF1), // SRCCLKREQ14 ==> SRCCLKREQ PCIEX4 Slot 2
++	PAD_CFG_NF(GPP_H9, NONE, DEEP, NF1), // SRCCLKREQ15 ==> SRCCLKREQ PCIEX2 Slot 3
++
++	PAD_CFG_GPI_TRIG_OWN(GPP_H10, NONE, DEEP, EDGE_SINGLE, ACPI), // SML2CLK ==> 2x4 ATX Power Detect
++	PAD_CFG_GPO(GPP_H11, 1, PLTRST), // SML2DATA ==> PCIE Slot 2 Power Enable
++	PAD_NC(GPP_H12, NONE), // SML2ALERT ==> Testpoint
++	PAD_NC(GPP_H13, NONE), // SML3CLK ==> Testpoint
++	//PAD_CFG_GPI(GPP_H14, NONE, PLTRST), // SML3DATA ==> Volume Up Audio (interrupt?)
++	PAD_CFG_GPO(GPP_H15, 1, PLTRST), // SML3ALERT ==> PCH Delay Enable
++	PAD_CFG_GPO(GPP_H16, 1, PLTRST), // SML4CLK ==> M.2 CPU SSD Power Enable
++	PAD_CFG_GPO(GPP_H17, 1, PLTRST), // SLM4DATA ==> M.2 WLAN RST
++	PAD_NC(GPP_H18, NONE), // SML4ALERT ==> Testpoint
++	PAD_CFG_NF(GPP_H19, NONE, DEEP, NF1), // ISH_I2C0_SDA ==> ISH header
++	PAD_CFG_NF(GPP_H20, NONE, DEEP, NF1), // ISH_I2C0_SCL ==> ISH header
++	PAD_CFG_NF(GPP_H21, NONE, DEEP, NF1), // ISH_I2C1_SDA ==> ISH header
++	PAD_CFG_NF(GPP_H22, NONE, DEEP, NF1), // ISH_I2C1_SCL ==> ISH header
++	PAD_CFG_GPO(GPP_H23, 1, PLTRST), // TIME_SYNC0 ==> PCH Power Loss Delay Notify (Low=2sec,High=8sec)
++
++	/* ------- GPIO Community 2 ------- */
++
++	/* ------- GPIO Group GPD ------- */
++
++	/* Deep Sleep well group. All other groups are Primary Well */
++
++	PAD_NC(GPD0, NONE), // BATLOW ==> Testpoint
++	PAD_NC(GPD1, NONE), // ACPPRESENT ==> Testpoint
++	PAD_CFG_NF(GPD2, NONE, PWROK, NF1), // LAN_WAKE ==> PCIE x4 LAN WAKE
++	PAD_CFG_NF(GPD3, NONE, PWROK, NF1), // PWRBTN ==> Power Button
++	PAD_CFG_NF(GPD4, NONE, PWROK, NF1), // SLP_S3
++	PAD_CFG_NF(GPD5, NONE, PWROK, NF1), // SLP_S4
++	PAD_CFG_NF(GPD6, NONE, PWROK, NF1), // SLP_A
++	PAD_NC(GPD7, NONE), // GPD_7
++	PAD_CFG_NF(GPD8, NONE, PWROK, NF1), // SUSCLK
++	PAD_CFG_NF(GPD9, NONE, PWROK, NF1), // SLP_WLAN
++	PAD_CFG_NF(GPD10, NONE, PWROK, NF1), // SLP_S5
++	PAD_CFG_NF(GPD11, NONE, PWROK, NF1), // LANDPHYPC
++	PAD_NC(GPD12, NONE), // GPD_12
++
++	/* ------- GPIO Community 3 ------- */
++
++	/* ------- GPIO Group eSPI ------- */
++
++	/* ------- GPIO Group GPP_A ------- */
++
++	PAD_CFG_NF(GPP_A0, NONE, DEEP, NF1), // ESPI_IO0 ==> ESPI IO0 EC
++	PAD_CFG_NF(GPP_A1, NONE, DEEP, NF1), // ESPI_IO1 ==> ESPI IO1 EC
++	PAD_CFG_NF(GPP_A2, NONE, DEEP, NF1), // ESPI_IO2/SUSWARN/SUSPWRDNACK ==> ESPI IO2 EC
++	PAD_CFG_NF(GPP_A3, NONE, DEEP, NF1), // ESPI_IO3/SUSACK ==> ESPI IO3 EC
++	PAD_CFG_NF(GPP_A4, NONE, DEEP, NF1), // ESPI_CS0 ==> ESPI CS0 EC
++	PAD_CFG_NF(GPP_A5, NONE, DEEP, NF1), // ESPI_CLK ==> ESPI CLK EC
++	PAD_CFG_NF(GPP_A6, NONE, DEEP, NF1), // ESPI_RESET ==> ESPI Reset EC
++	PAD_NC(GPP_A7, NONE), // ESPI_CS1
++	PAD_NC(GPP_A8, NONE), // ESPI_CS2
++	PAD_NC(GPP_A9, NONE), // ESPI_CS3
++	PAD_CFG_NF(GPP_A10, NONE, DEEP, NF1), // ESPI_ALERT0 ==> ESPI Alert Embedded Controller
++	PAD_NC(GPP_A11, NONE), // ESPI_ALERT1
++	PAD_NC(GPP_A12, NONE), // ESPI_ALERT2
++	PAD_NC(GPP_A13, NONE), // ESPI_ALERT3
++	PAD_NC(GPP_A14, NONE), // GPP_A14 ==> PCIE Slot 1 Power Enable (SATA is used therefore NC)
++
++	///* ------- GPIO Group GPP_C ------- */
++	PAD_CFG_NF(GPP_C0, NONE, DEEP, NF1), // SMBCLK ==> SMB CLK Resume (PCI Devices)
++	PAD_CFG_NF(GPP_C1, NONE, DEEP, NF1), // SMBDATA ==> SMB DATA Resume (PCI Devices)
++	PAD_NC(GPP_C2, NONE), // SMBALERT ==> Testpoint
++	PAD_CFG_NF(GPP_C3, NONE, DEEP, NF3), // ISH_UART0_RXD/I2C2_SDA ==> USB3
++	PAD_CFG_NF(GPP_C4, NONE, DEEP, NF3), // ISH_UART0_TXD/I2C2 SCL ==> USB3
++	PAD_CFG_GPO(GPP_C5, 0, DEEP), // SML0ALERT ==> ESPI High=Disabled Low=Enabled
++	PAD_CFG_NF(GPP_C6, NONE, DEEP, NF2), // ISH_I2C2_SDA/I2C3_SDA ==> header
++	PAD_CFG_NF(GPP_C7, NONE, DEEP, NF2), // ISH_I2C2_SCL/I2C3_SCL ==> header
++	PAD_NC(GPP_C8, NONE), // UART0_RXD ==> header
++	PAD_NC(GPP_C9, NONE), // UART0_TXD ==> header
++	//PAD_CFG_GPO(GPP_C10, 1, PLTRST), // UART0_RTS ==> M.2 SSD Slot 1 Reset
++	PAD_NC(GPP_C11, NONE), // UART0_CTS ==> header
++	PAD_CFG_NF(GPP_C12, NONE, DEEP, NF1), // UART1_RXD/ISH_UART1_RXD ==> header
++	PAD_CFG_NF(GPP_C13, NONE, DEEP, NF1), // UART1_TXD/ISH_UART1_TXD ==> header
++	PAD_CFG_NF(GPP_C14, NONE, DEEP, NF1), // UART1_RTS/ISH_UART1_RTS ==> header
++	PAD_CFG_NF(GPP_C15, NONE, DEEP, NF1), // UART1_CTS/ISH_UART1_CTS ==> header
++	PAD_CFG_NF(GPP_C16, NONE, DEEP, NF1), // I2C0_SDA ==> Power Monitoring
++	PAD_CFG_NF(GPP_C17, NONE, DEEP, NF1), // I2C0_SCL ==> Power Monitoring
++	PAD_CFG_NF(GPP_C18, NONE, DEEP, NF1), // I2C1_SDA ==> HDMI + Touch Panel
++	PAD_CFG_NF(GPP_C19, NONE, DEEP, NF1), // I2C1_SCL ==> HDMI + Touch Panel
++	PAD_CFG_NF(GPP_C20, NONE, DEEP, NF1), // UART2_RXD ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C21, NONE, DEEP, NF1), // UART2_TXT ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C22, NONE, DEEP, NF1), // UART2_RTS ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C23, NONE, DEEP, NF1), // UART2_CTS ==> USB Debug Port (UART -> USB Bridge)
++
++	///* ------- GPIO Group vGPIO_3 ------- */
++
++	///* ------- GPIO Community 4 ------- */
++
++	///* ------- GPIO Group GPP_S ------- */
++	PAD_CFG_NF(GPP_S0, NONE, DEEP, NF1), // SNDW1_CLK ==> SoundWire ALC711
++	PAD_CFG_NF(GPP_S1, NONE, DEEP, NF1), // SNDW1_DATA ==> SoundWire ALC711
++	PAD_CFG_NF(GPP_S2, NONE, DEEP, NF1), // SNDW2_CLK/DMIC_CLKB0 ==> SoundWire header
++	PAD_CFG_NF(GPP_S3, NONE, DEEP, NF1), // SNDW2_DATA/DMIC_CLKB1 ==> SoundWire header
++	PAD_CFG_NF(GPP_S4, NONE, DEEP, NF3), // SNDW3_CLK/DMIC_CLKA1 ==> DMIC ALC711
++	PAD_CFG_NF(GPP_S5, NONE, DEEP, NF3), // SNDW3_DATA/DMIC_DATA1 ==> DMIC ALC711
++	PAD_CFG_NF(GPP_S6, NONE, DEEP, NF3), // SNDW4_CLK/DMIC_CLKA0 ==> DMIC Microphone Header
++	PAD_CFG_NF(GPP_S7, NONE, DEEP, NF3), // SNDW4_DATA/DMIC_DATA0 ==> DMIC Microphone Header
++
++	///* ------- GPIO Group GPP_E ------- */
++	PAD_CFG_NF(GPP_E0, NONE, DEEP, NF1), // SATAXPCIE0/SATAGP0 ==> M.2 SSD
++	PAD_CFG_GPO(GPP_E1, 1, PLTRST), // SATAXPCIE1/SATAGP1 ==> PCH PCIE Slot 1 Power Enable
++	//PAD_CFG_GPO(GPP_E2, 1, PLTRST), // SATAXPCIE2/SATAGP2 ==> CPU PCIE Graphics (PEG) Reset (x16)
++	PAD_NC(GPP_E3, NONE), // CPU_GP0
++	PAD_CFG_NF(GPP_E4, NONE, DEEP, NF1), // SATA_DEVSLP0 ==> M.2 SSD SATA Device Sleep
++	PAD_CFG_GPO(GPP_E5, 1, PLTRST), // SATA_DEVSLP1 ==> CPU PCIE Graphics (PEG) Power Enable
++	PAD_CFG_GPI_SCI(GPP_E6, NONE, DEEP, EDGE_SINGLE, INVERT), // SATA_DEVSLP2 ==> PCIE Graphics Wake x16
++	PAD_NC(GPP_E7, NONE), // CPU_GP1 ==> Testpoint
++	PAD_CFG_NF(GPP_E8, NONE, DEEP, NF1), // SATALED/SPI1_CS1 ==> SATA LED
++	PAD_CFG_NF(GPP_E9, NONE, DEEP, NF1), // USB_OC0
++	PAD_CFG_NF(GPP_E10, NONE, DEEP, NF1), // USB_OC1
++	PAD_CFG_NF(GPP_E11, NONE, DEEP, NF1), // USB_OC2
++	PAD_CFG_NF(GPP_E12, NONE, DEEP, NF1), // USB_OC3
++	PAD_NC(GPP_E13, NONE), // SBK0/BK0
++	PAD_NC(GPP_E14, NONE), // SBK1/BK1
++	PAD_NC(GPP_E15, NONE), // SBK2/BK2
++	PAD_NC(GPP_E16, NONE), // SBK3/BK3
++	PAD_NC(GPP_E17, NONE), // SPI1_IO_2
++	PAD_NC(GPP_E18, NONE), // SPI1_IO_3
++	PAD_NC(GPP_E19, NONE), // SPI1_INT
++	PAD_NC(GPP_E20, NONE), // SPI1_RST
++	PAD_CFG_NF(GPP_E21, NONE, DEEP, NF1), // ISH_UART0_CTS
++
++	///* ------- GPIO Group GPP_K ------- */
++	_PAD_CFG_STRUCT(GPP_K0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // GSXDOUT ==> I2C Alert
++	PAD_CFG_GPI_TRIG_OWN(GPP_K1, NONE, PLTRST, OFF, ACPI), // GSXSLOAD ==> Sleep S0
++	PAD_CFG_GPO(GPP_K2, 1, PLTRST), // GSXDIN ==> M.2 SSD 3 Power Enable
++	PAD_CFG_GPI_APIC_EDGE_LOW(GPP_K3, NONE, DEEP), // GSXSRESET ==> Sleep State Acknowledge
++	PAD_CFG_GPO(GPP_K4, 0, DEEP), // GSXCLK ==> SX Entry G1 PCH
++	PAD_CFG_GPO(GPP_K5, 0, DEEP), // ADR_COMPLETE ==> Download Execute Auxiliary
++	//PAD_CFG_NF(GPP_K6, NONE, DEEP, NF1), // not available
++	//PAD_CFG_NF(GPP_K7, NONE, DEEP, NF1), // not available
++	PAD_CFG_NF(GPP_K8, NONE, DEEP, NF1), // CORE_VID0
++	PAD_CFG_NF(GPP_K9, NONE, DEEP, NF1), // CORE_VID1
++	//PAD_CFG_NF(GPP_K10, NONE, DEEP, NF1), / not available
++	PAD_CFG_GPO(GPP_K11, 1, PLTRST), // GPP_K_11 ==> M.2 SSD Power Enable
++
++	///* ------- GPIO Group GPP_F ------- */
++	PAD_CFG_GPI_SCI(GPP_F0, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE3/SATAGP3 ==> PCIE Slot 1 Wake
++	PAD_CFG_GPI_SCI(GPP_F1, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE4/SATAGP4 ==> PCIE Slot 2 Wake
++	PAD_CFG_GPI_SCI(GPP_F2, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE5/SATAGP5 ==> PCIE Slot 3 Wake
++	PAD_NC(GPP_F3, NONE), // SATAXPCIE6/SATAGP6
++	PAD_CFG_GPO(GPP_F4, 1, PLTRST), // SATAXPCIE7/SATAGP7 ==> PCIE Graphics Slot Power Enable
++	PAD_NC(GPP_F5, NONE), // SATA_DEVSLP3
++	PAD_CFG_GPO(GPP_F6, 0, PLTRST), // SATA_DEVSLP4 ==> SATA direct device sleep
++	PAD_CFG_GPO(GPP_F7, 0, PLTRST), // SATA_DEVSLP5 ==> PCIE Graphics dGPU Select
++	PAD_NC(GPP_F8, NONE), // SATA_DEVSLP6
++	_PAD_CFG_STRUCT(GPP_F9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE), 0), // SATA_DEVSLP7 ==> PCIE Graphics dGPU PWR OK
++	PAD_NC(GPP_F10, NONE), // SATA_SCLOCK
++	//PAD_CFG_GPO(GPP_F11, 1, PLTRST), // SATA_SLOAD ==> PCIE Slot 1 Reset (x4)
++	//PAD_CFG_GPO(GPP_F12, 1, PLTRST), // SATA_SDATAOUT1 ==> PCIE Slot 2 Reset (x4)
++	//PAD_CFG_GPO(GPP_F13, 1, PLTRST), // SATA_SDATAOUT0 ==> PCIE Slot 3 Reset (x4)
++	PAD_CFG_NF(GPP_F14, NONE, DEEP, NF1), // PS_ON
++	PAD_NC(GPP_F15, NONE), // GPP_F15 ==> Socket Occupied
++	//PAD_CFG_GPO(GPP_F16, 1, PLTRST), // GPP_F16 ==> M.2 SSD Slot 2 Reset
++	PAD_NC(GPP_F17, NONE), // GPP_F17
++	//PAD_CFG_GPO(GPP_F18, 1, PLTRST), // GPP_F18 ==> M.2 SSD CPU Reset
++	PAD_CFG_NF(GPP_F19, NONE, DEEP, NF1), // EDP_VDDEN
++	PAD_CFG_NF(GPP_F20, NONE, DEEP, NF1), // EDP_BKLTEN
++	PAD_CFG_NF(GPP_F21, NONE, DEEP, NF1), // EDP_BKLTCTL
++	_PAD_CFG_STRUCT(GPP_F22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(EDGE_SINGLE) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // VNN_CTRL
++	PAD_CFG_GPI_SCI(GPP_F23, NONE, PLTRST, EDGE_SINGLE, INVERT), // GPP_F23 ==> Codec Interrupt
++
++	///* ------- GPIO Community 5 ------- */
++
++	///* ------- GPIO Group GPP_D ------- */
++	PAD_CFG_NF(GPP_D0, NONE, DEEP, NF1), // SRCCLKREQ0 ==> SRCCLKREQ PCIE Graphics x16 Slot
++	//PAD_CFG_GPI(GPP_D0, UP_5K, DEEP), // SRCCLKREQ0 ==> SRCCLKREQ PCIE Graphics x16 Slot
++	PAD_CFG_NF(GPP_D1, NONE, DEEP, NF1), // SRCCLKREQ1 ==> Testpoint
++	PAD_CFG_NF(GPP_D2, NONE, DEEP, NF1), // SRCCLKREQ2 ==> SRCCLKREQ PICE x4 Slot 1
++	PAD_CFG_GPI(GPP_D3, NONE, DEEP), // SRCCLKREQ3 ==> GFX Detect Strap
++	/* GPP_D1 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D1, NONE, PLTRST, OFF, ACPI),
++	/* GPP_D2 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D2, NONE, PLTRST, OFF, ACPI),
++	/* GPP_D3 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D3, NONE, PLTRST, OFF, ACPI),
++	PAD_CFG_NF(GPP_D4, NONE, RSMRST, NF1), // SML1CLK ==> SMLink CLK EC
++	//PAD_CFG_GPIO(GPP_D5, NONE, DEEP, NF2), // CNV_RF_RESET ==> M.2. Bluetooth PCM Frame Sync
++	//PAD_CFG_GPIO(GPP_D6, NONE, DEEP, NF3), // MODEM_CLKREQ ==> M.2. Bluetooth PCM OUT
++	//PAD_CFG_GPIO(GPP_D7, NONE), // GPP_D7 ==> M.2 Bluetooth PCM IN
++	//PAD_CFG_GPIO(GPP_D8, NONE), // GPP_D8 ==> M.2 Bluetooth PCM CLK
++	PAD_CFG_NF(GPP_D5, NONE, DEEP, NF2), // CNV_RF_RESET ==> M.2. Bluetooth PCM Frame Sync
++	PAD_CFG_NF(GPP_D6, NONE, DEEP, NF3), // MODEM_CLKREQ ==> M.2. Bluetooth PCM OUT
++	PAD_CFG_GPI(GPP_D7, NONE, DEEP), // GPP_D7 ==> M.2 Bluetooth PCM_IN
++	PAD_CFG_GPO(GPP_D8, 0, DEEP), // GPP_D8 ==> M.2 Bluetooth PCM_CLK
++	PAD_CFG_NF(GPP_D9, NONE, DEEP, NF1), // SML0CLK ==> SMLink CLK LAN
++	PAD_CFG_NF(GPP_D10, NONE, DEEP, NF1), // SML0DATA ==> SMLink CLK LAN
++	PAD_CFG_NF(GPP_D11, NONE, DEEP, NF1), // SRCCLKREQB_4 ==> Testpoint
++	PAD_CFG_NF(GPP_D12, NONE, DEEP, NF1), // SRCCLKREQB_5 ==> LAN CTRL
++	PAD_CFG_NF(GPP_D13, NONE, DEEP, NF1), // SRCCLKREQB_6 ==> Testpoint
++	PAD_CFG_NF(GPP_D14, NONE, DEEP, NF1), // SRCCLKREQB_7 ==> Testpoint
++	/* GPP_D11 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D11, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D12 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D12, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D13 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D13, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D14 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D14, NONE, PLTRST, OFF, ACPI),
++	PAD_CFG_NF(GPP_D15, NONE, RSMRST, NF1), // SML1DATA ==> SMLink DATA EC
++	PAD_CFG_NF(GPP_D16, NONE, DEEP, NF1), // GSPI3_CS0 ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D17, NONE, DEEP, NF1), // GSPI3_CLK ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D18, NONE, DEEP, NF1), // GSPI3_MISO ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D19, NONE, DEEP, NF1), // GSPI3_MOSI ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D20, NONE, DEEP, NF1), // UART3_RXD ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D21, NONE, DEEP, NF1), // UART3_TXD ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_GPO(GPP_D22, 0, PLTRST), // UART3_RTS ==> Multiplexed to SPI -> Touchpanel
++	_PAD_CFG_STRUCT(GPP_D23, PAD_FUNC(GPIO) | PAD_RESET(RSMRST) | PAD_TRIG(EDGE_SINGLE) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // UART3_CTS ==> Multiplexed to SPI -> Touchpanel
++};
++
++void variant_configure_gpio_pads(void)
++{
++	gpio_configure_pads(gpio_table, ARRAY_SIZE(gpio_table));
++}
++
++static const struct cros_gpio cros_gpios[] = {
++	CROS_GPIO_REC_AL(CROS_GPIO_VIRTUAL, CROS_GPIO_DEVICE_NAME),
++};
++DECLARE_CROS_GPIOS(cros_gpios);
+diff --git a/src/mainboard/intel/adlrvp/gpio_rpl_s.c b/src/mainboard/intel/adlrvp/gpio_rpl_s.c
+new file mode 100644
+index 0000000000..04e465065e
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/gpio_rpl_s.c
+@@ -0,0 +1,356 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <baseboard/gpio.h>
++#include <baseboard/variants.h>
++#include <commonlib/helpers.h>
++#include <vendorcode/google/chromeos/chromeos.h>
++
++/* Pad configuration in ramstage
++ * GPIO Community consists of several GPIO Groups
++ * GPIO Group consists of several GPIO PADs/Pins
++ * Reset reference for Deep sleep well Pads is PWROK
++ * Reset reference for Primary well Pads is RSMRST
++ * GPP: General Purpose Primary Well
++ * GPD: General Purpose Deep Sleep Well
++ */
++static const struct pad_config gpio_table[] = {
++	//TODO clkreq pins for CPU root ports are implemented via virtual wires
++
++	/* ------- GPIO Community 0 ------- */
++
++	/* ------- GPIO Group GPP_I ------- */
++	PAD_CFG_NF(GPP_I0, NONE, RSMRST, NF1), // EXT_PWR_GATE
++	PAD_CFG_NF(GPP_I1, NONE, DEEP, NF1), // DDSP_HPD1/DISP_MISC1 ==> HDMI Hot Plug Detect
++	PAD_CFG_NF(GPP_I2, NONE, DEEP, NF1), // DDSP_HPD2/DISP_MISC2 ==> Display-Port Hot Plug Detect
++	PAD_CFG_NF(GPP_I3, NONE, DEEP, NF1), // DDSP_HPD3/DISP_MISC3 ==> HDMI Hot Plug Detect
++	PAD_CFG_NF(GPP_I4, NONE, DEEP, NF1), // DDSP_HPD4/DISP_MISC4 ==> Display-Port Hot Plug Detect
++	PAD_NC(GPP_I5, NONE), // DDPB_CTRLCLK
++	PAD_NC(GPP_I6, NONE), // DDPB_CTRLDATA
++	PAD_NC(GPP_I7, NONE), // DDPC_CTRLCLK
++	PAD_NC(GPP_I8, NONE), // DDPC_CTRLDATA
++	PAD_CFG_NF(GPP_I9, NONE, DEEP, NF1),  // GSPI0_CS1 ==> header
++	PAD_CFG_NF(GPP_I10, NONE, DEEP, NF2), // GSPI1_CS1/TIME_SYNC1
++	PAD_CFG_NF(GPP_I11, NONE, DEEP, NF2), // USB_OC4/I2C4_SDA ==> header
++	PAD_CFG_NF(GPP_I12, NONE, DEEP, NF2), // USB_OC5/I2C4_SCL ==> header
++	PAD_CFG_NF(GPP_I13, NONE, DEEP, NF1), // USB_OC6/I2C5_SDA ==> Type-C backpanel connector
++	PAD_CFG_NF(GPP_I14, NONE, DEEP, NF2), // USB_OC7/I2C5_SCL ==> header
++	PAD_CFG_NF(GPP_I15, NONE, DEEP, NF1), // GSPI0_CS0 ==> header
++	PAD_CFG_NF(GPP_I16, NONE, DEEP, NF1), // GSPI0_CLK ==> header
++	PAD_CFG_NF(GPP_I17, NONE, DEEP, NF1), // GSPI0_MISO ==> header
++	PAD_CFG_NF(GPP_I18, NONE, DEEP, NF1), // GSPI0_MOSI ==> header
++	PAD_CFG_NF(GPP_I19, NONE, DEEP, NF1), // GSPI1_CS0 ==> header
++	PAD_CFG_NF(GPP_I20, NONE, DEEP, NF1), // GSPI1_CLK ==> header
++	PAD_CFG_NF(GPP_I21, NONE, DEEP, NF1), // GSPI1_MISO ==> header
++	PAD_CFG_NF(GPP_I22, NONE, DEEP, NF1), // GSPI1_MOSI ==> header
++
++	/* ------- GPIO Group GPP_R ------- */
++	PAD_CFG_NF(GPP_R0, NONE, DEEP, NF1), // HDA_BCLK/HDACPU_BCLK ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R1, NONE, DEEP, NF1), // HDA_SYNC ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R2, NONE, DEEP, NF1), // HDA_SDO/HDACPU_SDO ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R3, NONE, DEEP, NF1), // HDA_SDI0/HDACPU_SDI ==> ALC711 Audio + Audio header
++	PAD_CFG_NF(GPP_R4, NONE, DEEP, NF1), // HDA_RST ==> Audio header
++	PAD_CFG_NF(GPP_R5, NONE, DEEP, NF1), // HDA_SDI1 ==> Audio header
++	PAD_NC(GPP_R6, NONE), // GPP_R_6
++	PAD_NC(GPP_R7, NONE), // GPP_R_7
++	PAD_NC(GPP_R8, NONE), // GPP_R_8
++	PAD_CFG_NF(GPP_R9, NONE, DEEP, NF1), // DDSP_HPDA/DISP_MISCA ==> e-DP Hot Plug Detect
++	PAD_CFG_GPO(GPP_R10, 1, PLTRST),     // DDSP_HPDB/DISP_MISCB ==> PCH Codec Power Enable
++	PAD_CFG_GPO(GPP_R11, 1, PLTRST),     // DDSP_HPDC/DISP_MISCC ==> SATA Power Enable
++
++	PAD_CFG_NF(GPP_R12, NONE, DEEP, NF2), // ISH_SPI_CS/DDP3_CTRLCLK/GSPI2_CS0 ==> HDMI SCL
++	PAD_CFG_NF(GPP_R13, NONE, DEEP, NF2), // ISH_SPI_CLK/DDP3_CTRLDATA/GSPI2_CLK ==> HDMI SDA
++	PAD_CFG_NF(GPP_R14, NONE, DEEP, NF2), // ISH_SPI_MISO/DDP4_CTRLCLK/GSPI2_MISO ==> Display Port Auxiliary SCL
++	PAD_CFG_NF(GPP_R15, NONE, DEEP, NF2), // ISH_SPI_MOSI/DDP4_CTRLDATA/GSPI2_MOSI ==> Display Port Auxiliary SDA
++	PAD_CFG_NF(GPP_R16, NONE, DEEP, NF1), // DDP1_CTRLCLK ==> HDMI SCL
++	PAD_CFG_NF(GPP_R17, NONE, DEEP, NF1), // DDP1_CTRLDATA ==> HDMI SDA
++	PAD_CFG_NF(GPP_R18, NONE, DEEP, NF1), // DDP2_CTRLCLK ==> Display Port Auxiliary SCL
++	PAD_CFG_NF(GPP_R19, NONE, DEEP, NF1), // DDP2_CTRLDATA ==> Display Port Auxiliary SDA
++	PAD_CFG_GPO(GPP_R20, 1, PLTRST), // DDPA_CTRLCLK ==> LAN Power Enable
++	PAD_CFG_GPO(GPP_R21, 0, PLTRST), // DDPA_CTRLDATA ==> Touch Panel Power Enable
++
++	/* ------- GPIO Group GPP_J ------- */
++	PAD_CFG_NF(GPP_J0, NONE, DEEP, NF1), // CNV_PA_BLANKING ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J1, NONE, DEEP, NF1), // CPU_C10_GATE ==> C10_GATE Embedded Controller
++	PAD_CFG_NF(GPP_J2, NONE, DEEP, NF1), // CNV_BRI_DT/UART0_RTS ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J3, NONE, DEEP, NF1), // CNV_BRI_RSP/UART0_RXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J4, NONE, DEEP, NF1), // CNV_RGI_DT/UART0_TXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J5, NONE, DEEP, NF1), // CNV_RGI_RSP/UART0_CTS ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J6, NONE, DEEP, NF1), // CNV_MFUART2_RXD ==> CNVi M.2 (WiFi/BT)
++	PAD_CFG_NF(GPP_J7, NONE, DEEP, NF1), // CNV_MFUART2_TXD ==> CNVi M.2 (WiFi/BT)
++
++	PAD_CFG_NF(GPP_J8, NONE, DEEP, NF1), // SRCCLKREQ16 ==> jumper (default HIGH if jumper is not connected)
++	PAD_CFG_NF(GPP_J9, NONE, DEEP, NF1), // SRCCLKREQ17 (not connected)
++	PAD_CFG_NF(GPP_J10, NONE, DEEP, NF1), // BSSB_LS_RX ==> Backpanel Type-C Connector + header
++	PAD_CFG_NF(GPP_J11, NONE, DEEP, NF1), // BSSB_LS_TX ==> Backpanel Type-C Connector + header
++
++	/* ------- GPIO Community 1 ------- */
++
++	/* ------- GPIO Group GPP_B ------- */
++	PAD_CFG_NF(GPP_B0, NONE, DEEP, NF1), // PCIE_LNK_DOWN ==> PCIE Link Down LED
++	PAD_CFG_NF(GPP_B1, NONE, DEEP, NF1), // ISH_UART0_RTS/GSPI2_CS1 ==> header
++	PAD_CFG_GPI_SCI(GPP_B2, NATIVE, DEEP, EDGE_SINGLE, INVERT), // VRALERT ==> M.2 UART Wake
++	PAD_CFG_NF(GPP_B3, NONE, DEEP, NF1), // CPU_GP2 ==> M.2 Bluetooth RF-KILL
++	//TODO 618659 indicates this pad is not SMI capable
++	//_PAD_CFG_STRUCT(GPP_B4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(EDGE_SINGLE) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // CPU_GP3 ==> EC SMI
++	PAD_CFG_NF(GPP_B5, NONE, DEEP, NF2), // SX_EXIT_HOLDOFF/ISH_GP6 ==> ISH sensor header
++	//PAD_CFG_GPO(GPP_B6, 1, PLTRST), // CLKOUT_48 ==> M.2 SSD Slot 3 Reset
++	PAD_CFG_NF(GPP_B7, NONE, DEEP, NF1), // ISH_GP7 ==> ISH header
++	PAD_CFG_NF(GPP_B8, NONE, DEEP, NF1), // ISH_GP0 ==> ISH header
++	PAD_CFG_NF(GPP_B9, NONE, DEEP, NF1), // ISH_GP1 ==> ISH header
++	PAD_CFG_NF(GPP_B10, NONE, DEEP, NF1), // ISH_GP2 ==> ISH header
++	PAD_NC(GPP_B11, NONE), // GPP_B_11 ==> Audio header
++	PAD_CFG_NF(GPP_B12, NONE, DEEP, NF1), // SLP_S0 ==> EC Sleep S0
++	PAD_CFG_NF(GPP_B13, NONE, DEEP, NF1), // PLTRST ==> various devices PLTRST Pins/Pads
++	PAD_CFG_NF(GPP_B14, NONE, DEEP, NF1), // SPKR ==> Speaker/Buzzer
++	PAD_CFG_NF(GPP_B15, NONE, DEEP, NF1), // ISH_GP3 ==> ISH header
++	PAD_CFG_NF(GPP_B16, NONE, DEEP, NF1), // ISH_GP4 ==> ISH header
++	PAD_CFG_NF(GPP_B17, NONE, DEEP, NF1), // ISH_GP5 ==> ISH header
++	PAD_CFG_NF(GPP_B18, NONE, DEEP, NF1), // PMCALERT ==> USB Type-C Power Delivery I2C Alert
++	PAD_CFG_GPO(GPP_B19, 1, PLTRST), // RSVD ==> M.2 WiFi RF-KILL
++	//TODO check direction
++	//PAD_CFG_GPO(GPP_B20, 1, PLTRST), // RSVD ==> USB Type-C Power Delivery Presence Detect
++	PAD_CFG_GPO(GPP_B21, 1, PLTRST), // GPP_B21 ==> PCIE_SLOT_3_PWREN
++	PAD_CFG_GPO(GPP_B22, 1, PLTRST), // GPP_B22 ==> M.2_PCH_SSD_2_PWREN
++	PAD_CFG_NF(GPP_B23, NONE, DEEP, NF1), // SML1ALERT/PCHHOT ==> TP (Testpoint)
++
++	///* ------- GPIO Group GPP_G ------- */
++	//TODO check G0, G1, G7 use
++	//PAD_CFG_GPO(GPP_G0, 0, PLTRST); // GPP_G0 ==> ?
++	//PAD_CFG_GPO(GPP_G1, 1, PLTRST); // GPP_G1 ==> ?
++	PAD_CFG_NF(GPP_G2, DN_20K, DEEP, NF1), // DNX_FORCE_RELOAD
++	_PAD_CFG_STRUCT(GPP_G3, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0), // GPP_G3 ==> GMII_MDC_0
++	_PAD_CFG_STRUCT(GPP_G4, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF), 0), // GPP_G4 ==> GMII_MDIO_0
++	PAD_CFG_NF(GPP_G5, NONE, DEEP, NF1), // SLP_DRAM ==> SLP_DRAM_N
++	PAD_CFG_GPO(GPP_G6, 0, DEEP), // GPP_G6 ==> CNVi Enable (Active LOW)
++	//_PAD_CFG_STRUCT(GPP_G7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // GPP_G7 ==> ?
++
++	///* ------- GPIO Group GPP_H ------- */
++	PAD_CFG_GPI(GPP_H0, NONE, DEEP), // GPP_H0 ==> jumper (HIGH if jumper is not connected)
++	PAD_CFG_GPI(GPP_H1, NONE, PLTRST), // GPP_H1 ==> USB Type-C Power Delivery Alert
++	//PAD_CFG_GPI_SCI(GPP_H2, NONE, RSMRST, EDGE_SINGLE, INVERT), // SRCCLKREQ8 ==> M.2 WLAN PEWAKE
++	PAD_CFG_NF(GPP_H3, NONE, DEEP, NF1), // SRCCLKREQ9 ==> SRCCLKREQ M.2 WLAN
++	PAD_CFG_NF(GPP_H4, NONE, DEEP, NF1), // SRCCLKREQ10 ==> SRCCLKREQ M.2 SSD 3
++	PAD_CFG_NF(GPP_H5, NONE, DEEP, NF1), // SRCCLKREQ11 ==> SRCCLKREQ CPU M.2 SSD
++	PAD_CFG_NF(GPP_H6, NONE, DEEP, NF1), // SRCCLKREQ12 ==> SRCCLKREQ M.2 SSD
++	PAD_CFG_NF(GPP_H7, NONE, DEEP, NF1), // SRCCLKREQ13 ==> SRCCLKREQ M.2 SSD 2
++	PAD_CFG_NF(GPP_H8, NONE, DEEP, NF1), // SRCCLKREQ14 ==> SRCCLKREQ PCIEX4 Slot 2
++	PAD_CFG_NF(GPP_H9, NONE, DEEP, NF1), // SRCCLKREQ15 ==> SRCCLKREQ PCIEX2 Slot 3
++
++	PAD_CFG_GPI_TRIG_OWN(GPP_H10, NONE, DEEP, EDGE_SINGLE, ACPI), // SML2CLK ==> 2x4 ATX Power Detect
++	PAD_CFG_GPO(GPP_H11, 1, PLTRST), // SML2DATA ==> PCIE Slot 2 Power Enable
++	PAD_NC(GPP_H12, NONE), // SML2ALERT ==> Testpoint
++	PAD_NC(GPP_H13, NONE), // SML3CLK ==> Testpoint
++	//PAD_CFG_GPI(GPP_H14, NONE, PLTRST), // SML3DATA ==> Volume Up Audio (interrupt?)
++	PAD_CFG_GPO(GPP_H15, 1, PLTRST), // SML3ALERT ==> PCH Delay Enable
++	PAD_CFG_GPO(GPP_H16, 1, PLTRST), // SML4CLK ==> M.2 CPU SSD Power Enable
++	PAD_CFG_GPO(GPP_H17, 1, PLTRST), // SLM4DATA ==> M.2 WLAN RST
++	PAD_NC(GPP_H18, NONE), // SML4ALERT ==> Testpoint
++	PAD_CFG_NF(GPP_H19, NONE, DEEP, NF1), // ISH_I2C0_SDA ==> ISH header
++	PAD_CFG_NF(GPP_H20, NONE, DEEP, NF1), // ISH_I2C0_SCL ==> ISH header
++	PAD_CFG_NF(GPP_H21, NONE, DEEP, NF1), // ISH_I2C1_SDA ==> ISH header
++	PAD_CFG_NF(GPP_H22, NONE, DEEP, NF1), // ISH_I2C1_SCL ==> ISH header
++	PAD_CFG_GPO(GPP_H23, 1, PLTRST), // TIME_SYNC0 ==> PCH Power Loss Delay Notify (Low=2sec,High=8sec)
++
++	/* ------- GPIO Community 2 ------- */
++
++	/* ------- GPIO Group GPD ------- */
++
++	/* Deep Sleep well group. All other groups are Primary Well */
++
++	PAD_NC(GPD0, NONE), // BATLOW ==> Testpoint
++	PAD_NC(GPD1, NONE), // ACPPRESENT ==> Testpoint
++	PAD_CFG_NF(GPD2, NONE, PWROK, NF1), // LAN_WAKE ==> PCIE x4 LAN WAKE
++	PAD_CFG_NF(GPD3, NONE, PWROK, NF1), // PWRBTN ==> Power Button
++	PAD_CFG_NF(GPD4, NONE, PWROK, NF1), // SLP_S3
++	PAD_CFG_NF(GPD5, NONE, PWROK, NF1), // SLP_S4
++	PAD_CFG_NF(GPD6, NONE, PWROK, NF1), // SLP_A
++	PAD_NC(GPD7, NONE), // GPD_7
++	PAD_CFG_NF(GPD8, NONE, PWROK, NF1), // SUSCLK
++	PAD_CFG_NF(GPD9, NONE, PWROK, NF1), // SLP_WLAN
++	PAD_CFG_NF(GPD10, NONE, PWROK, NF1), // SLP_S5
++	PAD_CFG_NF(GPD11, NONE, PWROK, NF1), // LANDPHYPC
++	PAD_NC(GPD12, NONE), // GPD_12
++
++	/* ------- GPIO Community 3 ------- */
++
++	/* ------- GPIO Group eSPI ------- */
++
++	/* ------- GPIO Group GPP_A ------- */
++
++	PAD_CFG_NF(GPP_A0, NONE, DEEP, NF1), // ESPI_IO0 ==> ESPI IO0 EC
++	PAD_CFG_NF(GPP_A1, NONE, DEEP, NF1), // ESPI_IO1 ==> ESPI IO1 EC
++	PAD_CFG_NF(GPP_A2, NONE, DEEP, NF1), // ESPI_IO2/SUSWARN/SUSPWRDNACK ==> ESPI IO2 EC
++	PAD_CFG_NF(GPP_A3, NONE, DEEP, NF1), // ESPI_IO3/SUSACK ==> ESPI IO3 EC
++	PAD_CFG_NF(GPP_A4, NONE, DEEP, NF1), // ESPI_CS0 ==> ESPI CS0 EC
++	PAD_CFG_NF(GPP_A5, NONE, DEEP, NF1), // ESPI_CLK ==> ESPI CLK EC
++	PAD_CFG_NF(GPP_A6, NONE, DEEP, NF1), // ESPI_RESET ==> ESPI Reset EC
++	PAD_NC(GPP_A7, NONE), // ESPI_CS1
++	PAD_NC(GPP_A8, NONE), // ESPI_CS2
++	PAD_NC(GPP_A9, NONE), // ESPI_CS3
++	PAD_CFG_NF(GPP_A10, NONE, DEEP, NF1), // ESPI_ALERT0 ==> ESPI Alert Embedded Controller
++	PAD_NC(GPP_A11, NONE), // ESPI_ALERT1
++	PAD_NC(GPP_A12, NONE), // ESPI_ALERT2
++	PAD_NC(GPP_A13, NONE), // ESPI_ALERT3
++	PAD_NC(GPP_A14, NONE), // GPP_A14 ==> PCIE Slot 1 Power Enable (SATA is used therefore NC)
++
++	///* ------- GPIO Group GPP_C ------- */
++	PAD_CFG_NF(GPP_C0, NONE, DEEP, NF1), // SMBCLK ==> SMB CLK Resume (PCI Devices)
++	PAD_CFG_NF(GPP_C1, NONE, DEEP, NF1), // SMBDATA ==> SMB DATA Resume (PCI Devices)
++	PAD_NC(GPP_C2, NONE), // SMBALERT ==> Testpoint
++	PAD_CFG_NF(GPP_C3, NONE, DEEP, NF3), // ISH_UART0_RXD/I2C2_SDA ==> USB3
++	PAD_CFG_NF(GPP_C4, NONE, DEEP, NF3), // ISH_UART0_TXD/I2C2 SCL ==> USB3
++	PAD_CFG_GPO(GPP_C5, 0, DEEP), // SML0ALERT ==> ESPI High=Disabled Low=Enabled
++	PAD_CFG_NF(GPP_C6, NONE, DEEP, NF2), // ISH_I2C2_SDA/I2C3_SDA ==> header
++	PAD_CFG_NF(GPP_C7, NONE, DEEP, NF2), // ISH_I2C2_SCL/I2C3_SCL ==> header
++	PAD_NC(GPP_C8, NONE), // UART0_RXD ==> header
++	PAD_NC(GPP_C9, NONE), // UART0_TXD ==> header
++	//PAD_CFG_GPO(GPP_C10, 1, PLTRST), // UART0_RTS ==> M.2 SSD Slot 1 Reset
++	PAD_NC(GPP_C11, NONE), // UART0_CTS ==> header
++	PAD_CFG_NF(GPP_C12, NONE, DEEP, NF1), // UART1_RXD/ISH_UART1_RXD ==> header
++	PAD_CFG_NF(GPP_C13, NONE, DEEP, NF1), // UART1_TXD/ISH_UART1_TXD ==> header
++	PAD_CFG_NF(GPP_C14, NONE, DEEP, NF1), // UART1_RTS/ISH_UART1_RTS ==> header
++	PAD_CFG_NF(GPP_C15, NONE, DEEP, NF1), // UART1_CTS/ISH_UART1_CTS ==> header
++	PAD_CFG_NF(GPP_C16, NONE, DEEP, NF1), // I2C0_SDA ==> Power Monitoring
++	PAD_CFG_NF(GPP_C17, NONE, DEEP, NF1), // I2C0_SCL ==> Power Monitoring
++	PAD_CFG_NF(GPP_C18, NONE, DEEP, NF1), // I2C1_SDA ==> HDMI + Touch Panel
++	PAD_CFG_NF(GPP_C19, NONE, DEEP, NF1), // I2C1_SCL ==> HDMI + Touch Panel
++	PAD_CFG_NF(GPP_C20, NONE, DEEP, NF1), // UART2_RXD ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C21, NONE, DEEP, NF1), // UART2_TXT ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C22, NONE, DEEP, NF1), // UART2_RTS ==> USB Debug Port (UART -> USB Bridge)
++	PAD_CFG_NF(GPP_C23, NONE, DEEP, NF1), // UART2_CTS ==> USB Debug Port (UART -> USB Bridge)
++
++	///* ------- GPIO Group vGPIO_3 ------- */
++
++	///* ------- GPIO Community 4 ------- */
++
++	///* ------- GPIO Group GPP_S ------- */
++	PAD_CFG_NF(GPP_S0, NONE, DEEP, NF1), // SNDW1_CLK ==> SoundWire ALC711
++	PAD_CFG_NF(GPP_S1, NONE, DEEP, NF1), // SNDW1_DATA ==> SoundWire ALC711
++	PAD_CFG_NF(GPP_S2, NONE, DEEP, NF1), // SNDW2_CLK/DMIC_CLKB0 ==> SoundWire header
++	PAD_CFG_NF(GPP_S3, NONE, DEEP, NF1), // SNDW2_DATA/DMIC_CLKB1 ==> SoundWire header
++	PAD_CFG_NF(GPP_S4, NONE, DEEP, NF3), // SNDW3_CLK/DMIC_CLKA1 ==> DMIC ALC711
++	PAD_CFG_NF(GPP_S5, NONE, DEEP, NF3), // SNDW3_DATA/DMIC_DATA1 ==> DMIC ALC711
++	PAD_CFG_NF(GPP_S6, NONE, DEEP, NF3), // SNDW4_CLK/DMIC_CLKA0 ==> DMIC Microphone Header
++	PAD_CFG_NF(GPP_S7, NONE, DEEP, NF3), // SNDW4_DATA/DMIC_DATA0 ==> DMIC Microphone Header
++
++	///* ------- GPIO Group GPP_E ------- */
++	PAD_CFG_NF(GPP_E0, NONE, DEEP, NF1), // SATAXPCIE0/SATAGP0 ==> M.2 SSD
++	PAD_CFG_GPO(GPP_E1, 1, PLTRST), // SATAXPCIE1/SATAGP1 ==> PCH PCIE Slot 1 Power Enable
++	//PAD_CFG_GPO(GPP_E2, 1, PLTRST), // SATAXPCIE2/SATAGP2 ==> CPU PCIE Graphics (PEG) Reset (x16)
++	PAD_NC(GPP_E3, NONE), // CPU_GP0
++	PAD_CFG_NF(GPP_E4, NONE, DEEP, NF1), // SATA_DEVSLP0 ==> M.2 SSD SATA Device Sleep
++	PAD_CFG_GPO(GPP_E5, 1, PLTRST), // SATA_DEVSLP1 ==> CPU PCIE Graphics (PEG) Power Enable
++	PAD_CFG_GPI_SCI(GPP_E6, NONE, DEEP, EDGE_SINGLE, INVERT), // SATA_DEVSLP2 ==> PCIE Graphics Wake x16
++	PAD_NC(GPP_E7, NONE), // CPU_GP1 ==> Testpoint
++	PAD_CFG_NF(GPP_E8, NONE, DEEP, NF1), // SATALED/SPI1_CS1 ==> SATA LED
++	PAD_CFG_NF(GPP_E9, NONE, DEEP, NF1), // USB_OC0
++	PAD_CFG_NF(GPP_E10, NONE, DEEP, NF1), // USB_OC1
++	PAD_CFG_NF(GPP_E11, NONE, DEEP, NF1), // USB_OC2
++	PAD_CFG_NF(GPP_E12, NONE, DEEP, NF1), // USB_OC3
++	PAD_NC(GPP_E13, NONE), // SBK0/BK0
++	PAD_NC(GPP_E14, NONE), // SBK1/BK1
++	PAD_NC(GPP_E15, NONE), // SBK2/BK2
++	PAD_NC(GPP_E16, NONE), // SBK3/BK3
++	PAD_NC(GPP_E17, NONE), // SPI1_IO_2
++	PAD_NC(GPP_E18, NONE), // SPI1_IO_3
++	PAD_NC(GPP_E19, NONE), // SPI1_INT
++	PAD_NC(GPP_E20, NONE), // SPI1_RST
++	PAD_CFG_NF(GPP_E21, NONE, DEEP, NF1), // ISH_UART0_CTS
++
++	///* ------- GPIO Group GPP_K ------- */
++	_PAD_CFG_STRUCT(GPP_K0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // GSXDOUT ==> I2C Alert
++	PAD_CFG_GPI_TRIG_OWN(GPP_K1, NONE, PLTRST, OFF, ACPI), // GSXSLOAD ==> Sleep S0
++	PAD_CFG_GPO(GPP_K2, 1, PLTRST), // GSXDIN ==> M.2 SSD 3 Power Enable
++	PAD_CFG_GPI_APIC_EDGE_LOW(GPP_K3, NONE, DEEP), // GSXSRESET ==> Sleep State Acknowledge
++	PAD_CFG_GPO(GPP_K4, 0, DEEP), // GSXCLK ==> SX Entry G1 PCH
++	PAD_CFG_GPO(GPP_K5, 0, DEEP), // ADR_COMPLETE ==> Download Execute Auxiliary
++	//PAD_CFG_NF(GPP_K6, NONE, DEEP, NF1), // not available
++	//PAD_CFG_NF(GPP_K7, NONE, DEEP, NF1), // not available
++	PAD_CFG_NF(GPP_K8, NONE, DEEP, NF1), // CORE_VID0
++	PAD_CFG_NF(GPP_K9, NONE, DEEP, NF1), // CORE_VID1
++	//PAD_CFG_NF(GPP_K10, NONE, DEEP, NF1), / not available
++	PAD_CFG_GPO(GPP_K11, 1, PLTRST), // GPP_K_11 ==> M.2 SSD Power Enable
++
++	///* ------- GPIO Group GPP_F ------- */
++	PAD_CFG_GPI_SCI(GPP_F0, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE3/SATAGP3 ==> PCIE Slot 1 Wake
++	PAD_CFG_GPI_SCI(GPP_F1, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE4/SATAGP4 ==> PCIE Slot 2 Wake
++	PAD_CFG_GPI_SCI(GPP_F2, NONE, DEEP, EDGE_SINGLE, INVERT), // SATAXPCIE5/SATAGP5 ==> PCIE Slot 3 Wake
++	PAD_NC(GPP_F3, NONE), // SATAXPCIE6/SATAGP6
++	PAD_CFG_GPO(GPP_F4, 1, PLTRST), // SATAXPCIE7/SATAGP7 ==> PCIE Graphics Slot Power Enable
++	PAD_NC(GPP_F5, NONE), // SATA_DEVSLP3
++	PAD_CFG_GPO(GPP_F6, 0, PLTRST), // SATA_DEVSLP4 ==> SATA direct device sleep
++	PAD_CFG_GPO(GPP_F7, 0, PLTRST), // SATA_DEVSLP5 ==> PCIE Graphics dGPU Select
++	PAD_NC(GPP_F8, NONE), // SATA_DEVSLP6
++	_PAD_CFG_STRUCT(GPP_F9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE), 0), // SATA_DEVSLP7 ==> PCIE Graphics dGPU PWR OK
++	PAD_NC(GPP_F10, NONE), // SATA_SCLOCK
++	//PAD_CFG_GPO(GPP_F11, 1, PLTRST), // SATA_SLOAD ==> PCIE Slot 1 Reset (x4)
++	//PAD_CFG_GPO(GPP_F12, 1, PLTRST), // SATA_SDATAOUT1 ==> PCIE Slot 2 Reset (x4)
++	//PAD_CFG_GPO(GPP_F13, 1, PLTRST), // SATA_SDATAOUT0 ==> PCIE Slot 3 Reset (x4)
++	PAD_CFG_NF(GPP_F14, NONE, DEEP, NF1), // PS_ON
++	PAD_NC(GPP_F15, NONE), // GPP_F15 ==> Socket Occupied
++	//PAD_CFG_GPO(GPP_F16, 1, PLTRST), // GPP_F16 ==> M.2 SSD Slot 2 Reset
++	PAD_NC(GPP_F17, NONE), // GPP_F17
++	//PAD_CFG_GPO(GPP_F18, 1, PLTRST), // GPP_F18 ==> M.2 SSD CPU Reset
++	PAD_CFG_NF(GPP_F19, NONE, DEEP, NF1), // EDP_VDDEN
++	PAD_CFG_NF(GPP_F20, NONE, DEEP, NF1), // EDP_BKLTEN
++	PAD_CFG_NF(GPP_F21, NONE, DEEP, NF1), // EDP_BKLTCTL
++	_PAD_CFG_STRUCT(GPP_F22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(EDGE_SINGLE) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // VNN_CTRL
++	PAD_CFG_GPI_SCI(GPP_F23, NONE, PLTRST, EDGE_SINGLE, INVERT), // GPP_F23 ==> Codec Interrupt
++
++	///* ------- GPIO Community 5 ------- */
++
++	///* ------- GPIO Group GPP_D ------- */
++	PAD_CFG_NF(GPP_D0, NONE, DEEP, NF1), // SRCCLKREQ0 ==> SRCCLKREQ PCIE Graphics x16 Slot
++	//PAD_CFG_GPI(GPP_D0, UP_5K, DEEP), // SRCCLKREQ0 ==> SRCCLKREQ PCIE Graphics x16 Slot
++	PAD_CFG_NF(GPP_D1, NONE, DEEP, NF1), // SRCCLKREQ1 ==> Testpoint
++	PAD_CFG_NF(GPP_D2, NONE, DEEP, NF1), // SRCCLKREQ2 ==> SRCCLKREQ PICE x4 Slot 1
++	PAD_CFG_GPI(GPP_D3, NONE, DEEP), // SRCCLKREQ3 ==> GFX Detect Strap
++	/* GPP_D1 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D1, NONE, PLTRST, OFF, ACPI),
++	/* GPP_D2 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D2, NONE, PLTRST, OFF, ACPI),
++	/* GPP_D3 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D3, NONE, PLTRST, OFF, ACPI),
++	PAD_CFG_NF(GPP_D4, NONE, RSMRST, NF1), // SML1CLK ==> SMLink CLK EC
++	//PAD_CFG_GPIO(GPP_D5, NONE, DEEP, NF2), // CNV_RF_RESET ==> M.2. Bluetooth PCM Frame Sync
++	//PAD_CFG_GPIO(GPP_D6, NONE, DEEP, NF3), // MODEM_CLKREQ ==> M.2. Bluetooth PCM OUT
++	//PAD_CFG_GPIO(GPP_D7, NONE), // GPP_D7 ==> M.2 Bluetooth PCM IN
++	//PAD_CFG_GPIO(GPP_D8, NONE), // GPP_D8 ==> M.2 Bluetooth PCM CLK
++	PAD_CFG_NF(GPP_D5, NONE, DEEP, NF2), // CNV_RF_RESET ==> M.2. Bluetooth PCM Frame Sync
++	PAD_CFG_NF(GPP_D6, NONE, DEEP, NF3), // MODEM_CLKREQ ==> M.2. Bluetooth PCM OUT
++	PAD_CFG_GPI(GPP_D7, NONE, DEEP), // GPP_D7 ==> M.2 Bluetooth PCM_IN
++	PAD_CFG_GPO(GPP_D8, 0, DEEP), // GPP_D8 ==> M.2 Bluetooth PCM_CLK
++	PAD_CFG_NF(GPP_D9, NONE, DEEP, NF1), // SML0CLK ==> SMLink CLK LAN
++	PAD_CFG_NF(GPP_D10, NONE, DEEP, NF1), // SML0DATA ==> SMLink CLK LAN
++	PAD_CFG_NF(GPP_D11, NONE, DEEP, NF1), // SRCCLKREQB_4 ==> Testpoint
++	PAD_CFG_NF(GPP_D12, NONE, DEEP, NF1), // SRCCLKREQB_5 ==> LAN CTRL
++	PAD_CFG_NF(GPP_D13, NONE, DEEP, NF1), // SRCCLKREQB_6 ==> Testpoint
++	PAD_CFG_NF(GPP_D14, NONE, DEEP, NF1), // SRCCLKREQB_7 ==> Testpoint
++	/* GPP_D11 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D11, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D12 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D12, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D13 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D13, NONE, PLTRST, OFF, ACPI),
++	///* GPP_D14 - GPIO */
++	//PAD_CFG_GPI_TRIG_OWN(GPP_D14, NONE, PLTRST, OFF, ACPI),
++	PAD_CFG_NF(GPP_D15, NONE, RSMRST, NF1), // SML1DATA ==> SMLink DATA EC
++	PAD_CFG_NF(GPP_D16, NONE, DEEP, NF1), // GSPI3_CS0 ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D17, NONE, DEEP, NF1), // GSPI3_CLK ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D18, NONE, DEEP, NF1), // GSPI3_MISO ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D19, NONE, DEEP, NF1), // GSPI3_MOSI ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D20, NONE, DEEP, NF1), // UART3_RXD ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_NF(GPP_D21, NONE, DEEP, NF1), // UART3_TXD ==> Multiplexed to SPI -> Touchpanel
++	PAD_CFG_GPO(GPP_D22, 0, PLTRST), // UART3_RTS ==> Multiplexed to SPI -> Touchpanel
++	_PAD_CFG_STRUCT(GPP_D23, PAD_FUNC(GPIO) | PAD_RESET(RSMRST) | PAD_TRIG(EDGE_SINGLE) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0), // UART3_CTS ==> Multiplexed to SPI -> Touchpanel
++};
++
++void variant_configure_gpio_pads(void)
++{
++	gpio_configure_pads(gpio_table, ARRAY_SIZE(gpio_table));
++}
++
++static const struct cros_gpio cros_gpios[] = {
++	CROS_GPIO_REC_AL(CROS_GPIO_VIRTUAL, CROS_GPIO_DEVICE_NAME),
++};
++DECLARE_CROS_GPIOS(cros_gpios);
+diff --git a/src/mainboard/intel/adlrvp/include/baseboard/variants.h b/src/mainboard/intel/adlrvp/include/baseboard/variants.h
+index bb2c3f62b0..61c388eb36 100644
+--- a/src/mainboard/intel/adlrvp/include/baseboard/variants.h
++++ b/src/mainboard/intel/adlrvp/include/baseboard/variants.h
+@@ -25,6 +25,10 @@ enum adl_boardid {
+ 	ADL_M_LP5 = 0x2,
+ 	/* ADL-N LP5 RVP */
+ 	ADL_N_LP5 = 0x7,
++	/* ADL-S DDR5 RVP 1DPC */
++	ADL_S_DDR5_1DPC = 0x2B,
++	/* RPL-S DDR5 RVP 1DPC */
++	RPL_S_DDR5_1DPC = 0x39,
+ };
+ 
+ /* Functions to configure GPIO as per variant schematics */
+diff --git a/src/mainboard/intel/adlrvp/mainboard.c b/src/mainboard/intel/adlrvp/mainboard.c
+index c02cbf9a58..6212df0e0f 100644
+--- a/src/mainboard/intel/adlrvp/mainboard.c
++++ b/src/mainboard/intel/adlrvp/mainboard.c
+@@ -39,7 +39,7 @@ void __weak variant_devtree_update(void)
+ 	/* Override dev tree settings per board */
+ }
+ 
+-#if CONFIG(BOARD_INTEL_ADLRVP_N_EXT_EC)
++#if CONFIG(BOARD_INTEL_ADLRVP_M_EXT_EC) || CONFIG(BOARD_INTEL_ADLRVP_N_EXT_EC)
+ static void add_fw_config_oem_string(const struct fw_config *config, void *arg)
+ {
+ 	struct smbios_type11 *t;
+@@ -59,7 +59,7 @@ static void mainboard_smbios_strings(struct device *dev, struct smbios_type11 *t
+ 
+ static void mainboard_enable(struct device *dev)
+ {
+-#if CONFIG(BOARD_INTEL_ADLRVP_N_EXT_EC)
++#if CONFIG(BOARD_INTEL_ADLRVP_M_EXT_EC) || CONFIG(BOARD_INTEL_ADLRVP_N_EXT_EC)
+ 	dev->ops->get_smbios_strings = mainboard_smbios_strings;
+ #endif
+ }
+@@ -82,9 +82,13 @@ const char *mainboard_vbt_filename(void)
+ 		if (cpu_id == CPUID_RAPTORLAKE_J0)
+ 			return "vbt_adlrvp_rpl_lp5.bin";
+ 		return "vbt_adlrvp_lp5.bin";
++	case ADL_M_LP5:
++		return "vbt_adlrvp_m_lp5.bin";
+ 	case ADL_P_DDR5_1:
+ 	case ADL_P_DDR5_2:
+ 		return "vbt_adlrvp_ddr5.bin";
++	case ADL_M_LP4:
++		return "vbt_adlrvp_m_lp4.bin";
+ 	default:
+ 		return "vbt.bin";
+ 	}
+diff --git a/src/mainboard/intel/adlrvp/memory.c b/src/mainboard/intel/adlrvp/memory.c
+index 160059921b..a86d2c7e33 100644
+--- a/src/mainboard/intel/adlrvp/memory.c
++++ b/src/mainboard/intel/adlrvp/memory.c
+@@ -170,6 +170,23 @@ static const struct mb_cfg ddr5_mem_config = {
+ 	}
+ };
+ 
++static const struct mb_cfg adls_ddr5_1dpc_mem_config = {
++	.type = MEM_TYPE_DDR5,
++
++	/* According to DOC #573387 rcomp values no longer have to be provided */
++	/* DDR DIMM configuration does not need to set DQ/DQS maps */
++
++	.ect = true, /* Early Command Training */
++
++	.UserBd = BOARD_TYPE_DESKTOP_1DPC,
++
++	.LpDdrDqDqsReTraining = 1,
++
++	.ddr_config = {
++		.dq_pins_interleaved = true,
++	}
++};
++
+ static const struct mb_cfg adlm_lp4_mem_config = {
+ 	.type = MEM_TYPE_LP4X,
+ 
+@@ -375,6 +392,10 @@ const struct mb_cfg *variant_memory_params(void)
+ 		return &adlm_lp5_mem_config;
+ 	case ADL_N_LP5:
+ 		return &adln_lp5_mem_config;
++	case ADL_S_DDR5_1DPC:
++		return &adls_ddr5_1dpc_mem_config;
++	case RPL_S_DDR5_1DPC:
++		return &adls_ddr5_1dpc_mem_config;
+ 	default:
+ 		die("unsupported board id : 0x%x\n", board_id);
+ 	}
+diff --git a/src/mainboard/intel/adlrvp/romstage_fsp_params.c b/src/mainboard/intel/adlrvp/romstage_fsp_params.c
+index 46640b6aad..8b6a5c24bd 100644
+--- a/src/mainboard/intel/adlrvp/romstage_fsp_params.c
++++ b/src/mainboard/intel/adlrvp/romstage_fsp_params.c
+@@ -90,6 +90,8 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 	case ADL_P_DDR4_1:
+ 	case ADL_P_DDR4_2:
+ 	case ADL_P_DDR5_1:
++	case ADL_S_DDR5_1DPC:
++	case RPL_S_DDR5_1DPC:
+ 		memcfg_init(memupd, mem_config, &dimm_module_spd_info, half_populated);
+ 		break;
+ 	case ADL_P_DDR5_2:
+diff --git a/src/mainboard/intel/adlrvp/spd/Makefile.mk b/src/mainboard/intel/adlrvp/spd/Makefile.mk
+index f503b6d959..52ff89f436 100644
+--- a/src/mainboard/intel/adlrvp/spd/Makefile.mk
++++ b/src/mainboard/intel/adlrvp/spd/Makefile.mk
+@@ -1,8 +1,8 @@
+ ## SPDX-License-Identifier: GPL-2.0-only
+ 
+ SPD_SOURCES =  adlrvp_lp4	# 0b000
+-SPD_SOURCES += empty		# 0b001
+-SPD_SOURCES += empty		# 0b002
++SPD_SOURCES += adlrvp_m_lp4	# 0b001
++SPD_SOURCES += adlrvp_m_lp5	# 0b002
+ SPD_SOURCES += adlrvp_lp5	# 0b003
+ SPD_SOURCES += empty		# 0b004
+ SPD_SOURCES += empty		# 0b005
+diff --git a/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp4.spd.hex b/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp4.spd.hex
+new file mode 100644
+index 0000000000..4960258ff1
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp4.spd.hex
+@@ -0,0 +1,32 @@
++23 11 11 0E 16 29 B9 08 00 40 00 00 02 01 00 00
++48 00 04 FF 92 54 05 00 8C 00 90 A8 90 E0 0B F0
++05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 7F E1 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 55 00 00 00 20 20 20 20 20 20 20
++20 20 20 20 20 20 20 20 20 20 20 20 20 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+diff --git a/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp5.spd.hex b/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp5.spd.hex
+new file mode 100644
+index 0000000000..df75f5b2a1
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/spd/adlrvp_m_lp5.spd.hex
+@@ -0,0 +1,32 @@
++23 10 13 0E 15 1A F9 08 00 40 00 00 0A 01 00 00
++48 00 0A FF 92 55 05 00 AA 00 90 A8 90 90 06 C0
++03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 7F 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 20 00 00 00 20 20 20 20 20 20 20
++20 20 20 20 20 20 20 20 20 20 20 20 20 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+diff --git a/src/mainboard/intel/adlrvp/variants/adlrvp_m/overridetree.cb b/src/mainboard/intel/adlrvp/variants/adlrvp_m/overridetree.cb
+new file mode 100644
+index 0000000000..cb9c3fc667
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/variants/adlrvp_m/overridetree.cb
+@@ -0,0 +1,3 @@
++chip soc/intel/alderlake
++	device domain 0 on  end
++end
+diff --git a/src/mainboard/intel/adlrvp/variants/adlrvp_m_ext_ec/overridetree.cb b/src/mainboard/intel/adlrvp/variants/adlrvp_m_ext_ec/overridetree.cb
+new file mode 100644
+index 0000000000..a3860c6f76
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/variants/adlrvp_m_ext_ec/overridetree.cb
+@@ -0,0 +1,34 @@
++chip soc/intel/alderlake
++	device domain 0 on
++		device ref pch_espi on
++			chip ec/google/chromeec
++				use conn0 as mux_conn[0]
++				use conn1 as mux_conn[1]
++				device pnp 0c09.0 on end
++			end
++		end
++		device ref pmc hidden
++
++			# The pmc_mux chip driver is a placeholder for the
++			# PMC.MUX device in the ACPI hierarchy.
++			chip drivers/intel/pmc_mux
++				device generic 0 on
++					chip drivers/intel/pmc_mux/conn
++						use usb2_port1 as usb2_port
++						use tcss_usb3_port1 as usb3_port
++						# SBU is fixed, HSL follows CC
++						register "sbu_orientation" = "TYPEC_ORIENTATION_NORMAL"
++						device generic 0 alias conn0 on end
++					end
++					chip drivers/intel/pmc_mux/conn
++						use usb2_port2 as usb2_port
++						use tcss_usb3_port2 as usb3_port
++						# SBU is fixed, HSL follows CC
++						register "sbu_orientation" = "TYPEC_ORIENTATION_NORMAL"
++						device generic 1 alias conn1 on end
++					end
++				end
++			end
++		end
++	end
++end
+diff --git a/src/mainboard/intel/adlrvp/variants/adlrvp_rpl_s_ddr5_udimm_1dpc/overridetree.cb b/src/mainboard/intel/adlrvp/variants/adlrvp_rpl_s_ddr5_udimm_1dpc/overridetree.cb
+new file mode 100644
+index 0000000000..a128b026ba
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/variants/adlrvp_rpl_s_ddr5_udimm_1dpc/overridetree.cb
+@@ -0,0 +1,81 @@
++chip soc/intel/alderlake
++
++	device domain 0 on
++		device ref cnvi_wifi on
++			register "cnvi_bt_core" = "true"
++			register "cnvi_bt_audio_offload" = "false"
++			chip drivers/wifi/generic
++				register "enable_cnvi_ddr_rfim" = "true"
++				device generic 0 on end
++			end
++		end
++		device ref gbe on end
++		device ref pcie5_0 on
++			#register "pcie_clk_config_flag[0]" = "PCIE_CLK_FREE_RUNNING"
++			register "cpu_pcie_rp[CPU_RP(2)]" = "{
++				.clk_src = 0,
++				.clk_req = 0,
++				.flags = PCIE_RP_LTR | PCIE_RP_AER,
++			}"
++		end
++		device ref gna on end
++		device ref smbus on end
++		device ref fast_spi on end
++		device ref pcie_rp1 on
++			# M.2 SSD (Document 626352 is wrong here. it states that clk_src should be 4)
++			register "pch_pcie_rp[PCH_RP(1)]" = "{
++				.clk_src = 10,
++				.clk_req = 10,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp5 on
++			# PCIE x4 Slot 3
++			register "pch_pcie_rp[PCH_RP(5)]" = "{
++				.clk_src = 15,
++				.clk_req = 15,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp7 on
++			# LAN GBE
++			register "pcie_clk_config_flag[5]" = "PCIE_CLK_LAN"
++			register "pch_pcie_rp[PCH_RP(7)]" = "{
++				.clk_req = 5,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp8 on
++			# M.2 CNVi (Document 626352 is wrong here. it states that clk_src should be 11)
++			register "pch_pcie_rp[PCH_RP(8)]" = "{
++				.clk_src = 9,
++				.clk_req = 9,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		#device ref pcie_rp9 on (doesn't work)
++		#	# PCIE x4 Slot 2 (Document 626352 is wrong here. it states that clk_src should be 16)
++		#	register "pch_pcie_rp[PCH_RP(9)]" = "{
++		#		.clk_src = 14,
++		#		.clk_req = 14,
++		#		.flags = PCIE_RP_CLK_REQ_DETECT,
++		#	}"
++		#end
++		device ref pcie_rp21 on
++			# PCIE x4 Slot 1 (Document 626352 is wrong here. it states that clk_src should be 17)
++			register "pch_pcie_rp[PCH_RP(21)]" = "{
++				.clk_src = 2,
++				.clk_req = 2,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp25 on
++			# M.2 SSD (Document 626352 is wrong here. it states that clk_src should be 6)
++			register "pch_pcie_rp[PCH_RP(25)]" = "{
++				.clk_src = 13,
++				.clk_req = 13,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++	end
++end
+diff --git a/src/mainboard/intel/adlrvp/variants/adlrvp_s_ddr5_udimm_1dpc/overridetree.cb b/src/mainboard/intel/adlrvp/variants/adlrvp_s_ddr5_udimm_1dpc/overridetree.cb
+new file mode 100644
+index 0000000000..a128b026ba
+--- /dev/null
++++ b/src/mainboard/intel/adlrvp/variants/adlrvp_s_ddr5_udimm_1dpc/overridetree.cb
+@@ -0,0 +1,81 @@
++chip soc/intel/alderlake
++
++	device domain 0 on
++		device ref cnvi_wifi on
++			register "cnvi_bt_core" = "true"
++			register "cnvi_bt_audio_offload" = "false"
++			chip drivers/wifi/generic
++				register "enable_cnvi_ddr_rfim" = "true"
++				device generic 0 on end
++			end
++		end
++		device ref gbe on end
++		device ref pcie5_0 on
++			#register "pcie_clk_config_flag[0]" = "PCIE_CLK_FREE_RUNNING"
++			register "cpu_pcie_rp[CPU_RP(2)]" = "{
++				.clk_src = 0,
++				.clk_req = 0,
++				.flags = PCIE_RP_LTR | PCIE_RP_AER,
++			}"
++		end
++		device ref gna on end
++		device ref smbus on end
++		device ref fast_spi on end
++		device ref pcie_rp1 on
++			# M.2 SSD (Document 626352 is wrong here. it states that clk_src should be 4)
++			register "pch_pcie_rp[PCH_RP(1)]" = "{
++				.clk_src = 10,
++				.clk_req = 10,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp5 on
++			# PCIE x4 Slot 3
++			register "pch_pcie_rp[PCH_RP(5)]" = "{
++				.clk_src = 15,
++				.clk_req = 15,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp7 on
++			# LAN GBE
++			register "pcie_clk_config_flag[5]" = "PCIE_CLK_LAN"
++			register "pch_pcie_rp[PCH_RP(7)]" = "{
++				.clk_req = 5,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp8 on
++			# M.2 CNVi (Document 626352 is wrong here. it states that clk_src should be 11)
++			register "pch_pcie_rp[PCH_RP(8)]" = "{
++				.clk_src = 9,
++				.clk_req = 9,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		#device ref pcie_rp9 on (doesn't work)
++		#	# PCIE x4 Slot 2 (Document 626352 is wrong here. it states that clk_src should be 16)
++		#	register "pch_pcie_rp[PCH_RP(9)]" = "{
++		#		.clk_src = 14,
++		#		.clk_req = 14,
++		#		.flags = PCIE_RP_CLK_REQ_DETECT,
++		#	}"
++		#end
++		device ref pcie_rp21 on
++			# PCIE x4 Slot 1 (Document 626352 is wrong here. it states that clk_src should be 17)
++			register "pch_pcie_rp[PCH_RP(21)]" = "{
++				.clk_src = 2,
++				.clk_req = 2,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++		device ref pcie_rp25 on
++			# M.2 SSD (Document 626352 is wrong here. it states that clk_src should be 6)
++			register "pch_pcie_rp[PCH_RP(25)]" = "{
++				.clk_src = 13,
++				.clk_req = 13,
++				.flags = PCIE_RP_CLK_REQ_DETECT,
++			}"
++		end
++	end
++end
+-- 
+2.49.0
+

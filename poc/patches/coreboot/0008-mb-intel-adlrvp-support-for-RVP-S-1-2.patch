@@ -1,0 +1,78 @@
+From 509cb0a6444fe3518540b5a27a0ef69739a2a385 Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Thu, 22 May 2025 12:20:02 +0200
+Subject: [PATCH 08/10] mb/intel/adlrvp: support for RVP-S 1/2
+
+---
+ src/soc/intel/alderlake/chip.h                | 10 ++++++++++
+ src/soc/intel/alderlake/fsp_params.c          |  5 +++--
+ src/soc/intel/alderlake/romstage/fsp_params.c |  2 ++
+ 3 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/soc/intel/alderlake/chip.h b/src/soc/intel/alderlake/chip.h
+index 3473b0643a..89968ce20f 100644
+--- a/src/soc/intel/alderlake/chip.h
++++ b/src/soc/intel/alderlake/chip.h
+@@ -826,6 +826,16 @@ struct soc_intel_alderlake_config {
+ 	 * Input PCH xhci port x for Type C Port 0 mapping.
+ 	 */
+ 	uint8_t mappingpchxhciusba[4];
++
++	/*
++	 * Set maximum speed (generation) for DMI Link between CPU and PCH
++	 * 0 (Default): automatically determine the maximum DMI Gen supported
++	 * 1: DMI Gen1 Link speed
++	 * 2: DMI Gen2 Link speed
++	 * ...
++	 */
++
++	uint8_t dmi_max_link_speed;
+ };
+ 
+ typedef struct soc_intel_alderlake_config config_t;
+diff --git a/src/soc/intel/alderlake/fsp_params.c b/src/soc/intel/alderlake/fsp_params.c
+index a788319efc..ad59e77abb 100644
+--- a/src/soc/intel/alderlake/fsp_params.c
++++ b/src/soc/intel/alderlake/fsp_params.c
+@@ -505,6 +505,7 @@ static uint16_t get_vccin_aux_imon_iccmax(const struct soc_intel_alderlake_confi
+ 	case PCI_DID_INTEL_ADL_N_ID_2:
+ 	case PCI_DID_INTEL_ADL_N_ID_3:
+ 	case PCI_DID_INTEL_ADL_N_ID_4:
++		return ICC_MAX_ID_ADL_N_MA;
+ 	case PCI_DID_INTEL_ADL_N_ID_5:
+ 	case PCI_DID_INTEL_ADL_N_ID_6:
+ 	case PCI_DID_INTEL_ADL_N_ID_7:
+@@ -613,7 +614,7 @@ static void fill_fsps_igd_params(FSP_S_CONFIG *s_cfg,
+ 
+ 	/* Check if IGD is present and fill Graphics init param accordingly */
+ 	s_cfg->PeiGraphicsPeimInit = CONFIG(RUN_FSP_GOP) && is_devfn_enabled(SA_DEVFN_IGD);
+-	s_cfg->LidStatus = CONFIG(VBOOT_LID_SWITCH) ? get_lid_switch() : CONFIG(RUN_FSP_GOP);
++	s_cfg->LidStatus = CONFIG(RUN_FSP_GOP);
+ 	s_cfg->PavpEnable = CONFIG(PAVP);
+ }
+ 
+@@ -1076,7 +1077,7 @@ static void fill_fsps_misc_power_params(FSP_S_CONFIG *s_cfg,
+ 	s_cfg->PkgCStateDemotion = !config->disable_package_c_state_demotion;
+ 
+ 	if (cpu_id == CPUID_RAPTORLAKE_J0 || cpu_id == CPUID_RAPTORLAKE_Q0)
+-		s_cfg->C1e = config->enable_c1e;
++		s_cfg->C1e = 0;
+ 	else
+ 		s_cfg->C1e = 1;
+ #if CONFIG(SOC_INTEL_RAPTORLAKE) && !CONFIG(FSP_USE_REPO)
+diff --git a/src/soc/intel/alderlake/romstage/fsp_params.c b/src/soc/intel/alderlake/romstage/fsp_params.c
+index 6ab8bb3e50..77050dc20a 100644
+--- a/src/soc/intel/alderlake/romstage/fsp_params.c
++++ b/src/soc/intel/alderlake/romstage/fsp_params.c
+@@ -245,6 +245,8 @@ static void fill_fspm_misc_params(FSP_M_CONFIG *m_cfg,
+ 
+ 	/* Skip MBP HOB */
+ 	m_cfg->SkipMbpHob = !CONFIG(FSP_PUBLISH_MBP_HOB);
++	/* Set maximum DMI link speed defined by the generation (e.g. Gen1, Gen2, Gen3 ...) */
++	m_cfg->DmiMaxLinkSpeed = config->dmi_max_link_speed;
+ }
+ 
+ static void fill_fspm_audio_params(FSP_M_CONFIG *m_cfg,
+-- 
+2.49.0
+

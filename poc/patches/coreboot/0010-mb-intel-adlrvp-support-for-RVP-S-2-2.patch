@@ -1,0 +1,146 @@
+From e9ffb39baaf20b7c3934e990acf7c659a9ec458d Mon Sep 17 00:00:00 2001
+From: Michal Gorlas <michal.gorlas@9elements.com>
+Date: Thu, 22 May 2025 14:09:17 +0200
+Subject: [PATCH 10/10] mb/intel/adlrvp: support for RVP-S 2/2
+
+---
+ src/mainboard/intel/adlrvp/ramstage.c       | 38 ++++++++++++---------
+ src/soc/intel/common/block/smm/smihandler.c | 37 ++++++++++++++++++++
+ 2 files changed, 58 insertions(+), 17 deletions(-)
+
+diff --git a/src/mainboard/intel/adlrvp/ramstage.c b/src/mainboard/intel/adlrvp/ramstage.c
+index fd8e20332b..0df97e3e44 100644
+--- a/src/mainboard/intel/adlrvp/ramstage.c
++++ b/src/mainboard/intel/adlrvp/ramstage.c
+@@ -5,7 +5,7 @@
+ #include <console/console.h>
+ #include <device/pci_ids.h>
+ #include <device/pci_ops.h>
+-#include <soc/gpio_soc_defs.h>
++#include <soc/gpio.h>
+ #include <soc/pci_devs.h>
+ #include <soc/soc_chip.h>
+ #include <static.h>
+@@ -63,27 +63,29 @@ void variant_update_power_limits(void)
+ 	}
+ }
+ 
+-static const struct typec_aux_bias_pads pad_config = { GPP_E23, GPP_E22 };
+ 
+-static const struct board_id_iom_port_config {
+-	int board_id;
+-	enum typec_port_index port;
+-} port_config[] = {
+-	{ ADL_P_LP4_1,	TYPE_C_PORT_2 },
+-	{ ADL_P_LP4_2,	TYPE_C_PORT_2 },
+-	{ ADL_P_DDR4_1,	TYPE_C_PORT_2 },
+-	{ ADL_P_DDR4_2,	TYPE_C_PORT_2 },
+-	{ ADL_P_LP5_1,	TYPE_C_PORT_2 },
+-	{ ADL_P_LP5_2,	TYPE_C_PORT_2 },
+-	{ ADL_M_LP4,	TYPE_C_PORT_1 },
+-	{ ADL_M_LP5,	TYPE_C_PORT_0 },
+-};
+ 
+ static void variant_update_typec_init_config(void)
+ {
+ 	/* Skip filling aux bias gpio pads for Windows SKUs */
+-	if (!(CONFIG(BOARD_INTEL_ADLRVP_P_EXT_EC) || CONFIG(BOARD_INTEL_ADLRVP_RPL_EXT_EC)))
+-		return;
++#if ((CONFIG(BOARD_INTEL_ADLRVP_P_EXT_EC) || CONFIG(BOARD_INTEL_ADLRVP_RPL_EXT_EC)))
++
++	static const struct board_id_iom_port_config {
++	int board_id;
++	enum typec_port_index port;
++	} port_config[] = {
++		{ ADL_P_LP4_1,	TYPE_C_PORT_2 },
++		{ ADL_P_LP4_2,	TYPE_C_PORT_2 },
++		{ ADL_P_DDR4_1,	TYPE_C_PORT_2 },
++		{ ADL_P_DDR4_2,	TYPE_C_PORT_2 },
++		{ ADL_P_LP5_1,	TYPE_C_PORT_2 },
++		{ ADL_P_LP5_2,	TYPE_C_PORT_2 },
++		{ ADL_M_LP4,	TYPE_C_PORT_1 },
++		{ ADL_M_LP5,	TYPE_C_PORT_0 },
++	};
++
++
++	const struct typec_aux_bias_pads pad_config = { GPP_E23, GPP_E22 };
+ 
+ 	config_t *config = config_of_soc();
+ 	int board_id = get_board_id();
+@@ -94,6 +96,8 @@ static void variant_update_typec_init_config(void)
+ 		memcpy(&config->typec_aux_bias_pads[port_config[i].port], &pad_config,
+ 			sizeof(pad_config));
+ 	}
++#endif
++	return;
+ }
+ 
+ void variant_devtree_update(void)
+diff --git a/src/soc/intel/common/block/smm/smihandler.c b/src/soc/intel/common/block/smm/smihandler.c
+index 59489a4f03..1a8953e04e 100644
+--- a/src/soc/intel/common/block/smm/smihandler.c
++++ b/src/soc/intel/common/block/smm/smihandler.c
+@@ -20,6 +20,7 @@
+ #include <intelblocks/smihandler.h>
+ #include <intelblocks/tco.h>
+ #include <intelblocks/uart.h>
++#include <payload_mm_interface.h>
+ #include <smmstore.h>
+ #include <soc/nvs.h>
+ #include <soc/pci_devs.h>
+@@ -316,6 +317,35 @@ static void southbridge_smi_store(
+ 	}
+ }
+ 
++static void southbridge_smi_payload(
++	const struct smm_save_state_ops *save_state_ops)
++{
++	u8 sub_command, ret;
++	void *io_smi;
++	uint32_t reg_ebx;
++
++	io_smi = find_save_state(save_state_ops, APM_CNT_PAYLOAD_MM);
++
++	if (!io_smi)
++		return;
++
++	/* Command and return value in EAX */
++	sub_command = (save_state_ops->get_reg(io_smi, RAX) >> 8) & 0xff;
++
++	/* MM shared buffer address in EBX */
++	reg_ebx = save_state_ops->get_reg(io_smi, RBX);
++
++	/* drivers/mm_payload_interface/smi.c */
++	ret = payload_mm_exec_interface(sub_command, reg_ebx);
++
++	/* if (ret) */
++	/* 	ret |= 1 << 8; */
++	/* else */
++	/* 	ret |= 0 << 8; */
++
++	save_state_ops->set_reg(io_smi, RAX, ret);
++}
++
+ __weak const struct gpio_lock_config *soc_gpio_lock_config(size_t *num)
+ {
+ 	*num = 0;
+@@ -393,9 +423,16 @@ void smihandler_southbridge_apmc(
+ 	case APM_CNT_FINALIZE:
+ 		finalize();
+ 		break;
++	case APM_CNT_PAYLOAD_MM:
++		if (CONFIG(PAYLOAD_MM_INTERFACE))
++			southbridge_smi_payload(save_state_ops);
++		break;
+ 	}
+ 
+ 	mainboard_smi_apmc(reg8);
++
++	if (CONFIG(PAYLOAD_MM_INTERFACE))
++		payload_mm_call_entrypoint();
+ }
+ 
+ void smihandler_southbridge_pm1(
+-- 
+2.49.0
+
